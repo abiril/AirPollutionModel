@@ -1,4 +1,4 @@
-# A Bayesian Multisource Fusion Model for Spatiotemporal PM$2.5 in an Urban Setting
+# A Bayesian Multisource Fusion Model for Spatiotemporal PM2.5 in an Urban Setting
 
 Code and complementary material for the paper 'A Bayesian Multisource Fusion Model for Spatiotemporal PM2.5 in an Urban Setting' submitted to Environmetrics journal.
 
@@ -21,7 +21,7 @@ This work is particularly valuable for policy assessment and future exposure stu
 │  ├── 2- London Air.Rmd                # Air pollution monitoring site data from the London Air network
 │  ├── 3-AURN and LA Data.Rmd           # Joining monitoring site data
 │  ├── 4-Climate.Rmd                    # Processing HAD-UK climate data
-│  ├── 5-AOD.Rmd                        # Initial processing of NASA MAIAC AOD satellite data with Inverse Distance Weighting for gap filling
-│  ├── 6-NO2 OMI.Rmd                    # 
+│  ├── 5-AOD.Rmd                        # (OLD) Initial processing of NASA MAIAC AOD satellite data with Inverse Distance Weighting for gap filling
+│  ├── 6-NO2 OMI.Rmd                    # (OLD) Initial processing of NASA OMI/AURA NO2 column data with Inverse Distance Weighting for gap filling
 │  ├── 1-AURN.Rmd
 │  ├── 1-AURN.Rmd
