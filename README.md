@@ -17,11 +17,16 @@ This work is particularly valuable for policy assessment and future exposure stu
 ```md
 
 ├── 1. DATA                             # Creating, cleaning, joining and extracting all model data and full potential covariates
-│  ├── 1-AURN.Rmd                       # Air pollution monitoring site data from the Automatic Urban and Rural Network
+│  ├── 1-AURN.Rmd                       # Air pollution monitoring site data from the Automatic Urban and Rural Network (AURN)
 │  ├── 2- London Air.Rmd                # Air pollution monitoring site data from the London Air network
 │  ├── 3-AURN and LA Data.Rmd           # Joining monitoring site data
 │  ├── 4-Climate.Rmd                    # Processing HAD-UK climate data
 │  ├── 5-AOD.Rmd                        # (OLD) Initial processing of NASA MAIAC AOD satellite data with Inverse Distance Weighting for gap filling
 │  ├── 6-NO2 OMI.Rmd                    # (OLD) Initial processing of NASA OMI/AURA NO2 column data with Inverse Distance Weighting for gap filling
+│  ├── 7-Boundary Layer Height.Rmd      # Processing and projection of Boundary Layer Height (BLH) from ERA5 Land
+│  ├── 8-PCM.Rmd                        # Processing of Pollution Climate Mapping (PCM) model data
+│  ├── 9-NDVI.Rmd
 │  ├── 1-AURN.Rmd
 │  ├── 1-AURN.Rmd
+│  ├── 1-AURN.Rmd
+
