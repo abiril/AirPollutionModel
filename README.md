@@ -23,10 +23,26 @@ This work is particularly valuable for policy assessment and future exposure stu
 │  ├── 4-Climate.Rmd                    # Processing HAD-UK climate data
 │  ├── 5-AOD.Rmd                        # (OLD) Initial processing of NASA MAIAC AOD satellite data with Inverse Distance Weighting for gap filling
 │  ├── 6-NO2 OMI.Rmd                    # (OLD) Initial processing of NASA OMI/AURA NO2 column data with Inverse Distance Weighting for gap filling
-│  ├── 7-Boundary Layer Height.Rmd      # Processing and projection of Boundary Layer Height (BLH) from ERA5 Land
+│  ├── 7-Boundary Layer Height.Rmd      # Processing and reprojection of Boundary Layer Height (BLH) from ERA5 Land
 │  ├── 8-PCM.Rmd                        # Processing of Pollution Climate Mapping (PCM) model data
-│  ├── 9-NDVI.Rmd
-│  ├── 1-AURN.Rmd
-│  ├── 1-AURN.Rmd
-│  ├── 1-AURN.Rmd
+│  ├── 9-NDVI.Rmd                      # Processing MODIS NDVI and reprojection with Inverse Distance Weight
+│  ├── 10-Rural-Urban.Rmd              # Rural - Urban classification of UK output areas
+│  ├── 11-GHSL.Rmd                     # Extraction of GHSL data for study domain and reprojection
+│  ├── 12-Population.Rmd               # World Pop population data processing
+│  ├── 13-Wind and Evapo.Rmd           # Processing and projection of Wind and Evapotranspiration/Evaporation from ERA5 Land
+│  ├── 14-AQUM.Rmd                     # Processing of AQUM data and reprojection by Inverse Distance Weighting
+│  ├── 15-Corine.Rmd                   # Processing for CORINE Land Cover data and categorisation 
+│  ├── 16-LAEI.Rmd                     # Processing London Atmospheric Emissions Inventory
+│  ├── 17-OSM_Roads.Rmd                # Download roads data using 'osmdata' and creating measures of nearby roads
+│  ├── 17-Road_Density-.Rmd            # Processing GRIP global road density data
+│  ├── 17-Greenspace.QGIS              # TO ADD
+│  ├── 18-Greenspace.Rmd               # Processing OSM greenspace
+│  ├── 19-Roads.Rmd                    # Download roads using 'osmdata', creating distance to road variables
+│  ├── 20-Met Office Reanalysis.Rmd    # Processing the Met Office Reanalysis of the AQUM model
+│  ├── Data Processing
+│  │  ├── A-All.Rmd
+│  │  ├── 1-AURN.Rmd
+│  │  ├── 1-AURN.Rmd
+│  │  └── 1-AURN.Rmd
+
 
