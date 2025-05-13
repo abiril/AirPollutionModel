@@ -46,6 +46,7 @@ This work is particularly valuable for policy assessment and future exposure stu
 │  ├──Variable Selection
 │  │  ├── Correlation Analysis.Rmd
 │  │  ├── Stepwise Forward Selection.Rmd
+│  │  ├── Spike-and-Slab Prior.Rmd
 │  │  └── VIF and Autocorrelation.Rmd
 ├── 2. MODELS
 │  ├── Code
