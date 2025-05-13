@@ -44,10 +44,10 @@ This work is particularly valuable for policy assessment and future exposure stu
 │  │  ├── C-Joining All Data.Rmd       # Joining site data and grid data and creating various different variables
 │  │  └── D-Final Data Prep.Rmd        # Creating more variables and scaling covariates
 │  ├──Variable Selection
-│  │  ├── Correlation Analysis.Rmd
-│  │  ├── Stepwise Forward Selection.Rmd
-│  │  ├── Spike-and-Slab Prior.Rmd
-│  │  └── VIF and Autocorrelation.Rmd
+│  │  ├── Correlation Analysis.Rmd          # Calculating correlations to PM2.5 and seasonality correlations
+│  │  ├── Stepwise Forward Selection.Rmd    # Stepwise Forward Model Selection by the PMCC statistic
+│  │  ├── Spike-and-Slab Prior.Rmd          # Spike-and-Slab Prior Regression for variable selection
+│  │  └── VIF and Autocorrelation.Rmd       # Variance Inflation Factor (VIF) and Autocorrelation for variable selection
 ├── 2. MODELS
 │  ├── Code
 │  │  ├── Covariates.R                 # Model 0a
