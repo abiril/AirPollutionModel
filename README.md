@@ -44,6 +44,10 @@ This work is particularly valuable for policy assessment and future exposure stu
 │  │  ├── B-All and Sat.Rmd            # Joining satellite data: Using Inverse Distance Weighting to gap fill, reproject and extract at monitoring site locations
 │  │  ├── C-Joining All Data.Rmd       # Joining site data and grid data and creating various different variables
 │  │  └── D-Final Data Prep.Rmd        # Creating more variables and scaling covariates
+│  ├──Variable Selection
+│  │  ├── Correlation Analysis.Rmd
+│  │  ├── Stepwise Forward Selection.Rmd
+│  │  └── VIF and Autocorrelation.Rmd
 ├── 2. MODELS
 │  ├── Code
 │  │  ├── Covariates.R                 # Model 0a
