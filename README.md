@@ -15,7 +15,6 @@ This work is particularly valuable for policy assessment and future exposure stu
 ## GitHub Structure
 
 ```md
-├── All Data.RData                         # All site and grid data with all variables
 ├── 1. DATA                            # Creating, cleaning, joining and extracting all model data and full potential covariates
 │  ├── 1-AURN.Rmd                      # Air pollution monitoring site data from the Automatic Urban and Rural Network (AURN)
 │  ├── 2- London Air.Rmd               # Air pollution monitoring site data from the London Air network
