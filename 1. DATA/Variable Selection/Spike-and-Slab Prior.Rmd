@@ -1,0 +1,134 @@
+---
+title: "Spike-and-Slab Prior"
+author: "Abi Riley"
+date: "2025-05-13"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+set.seed(23)
+
+
+```
+
+Load in packages
+
+```{r packages, echo=FALSE}
+
+library(sp)
+library(INLA)
+library(gstat)
+library(devtools)
+library(sf)
+library(inlabru)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(BoomSpikeSlab)
+
+```
+
+
+## Load in data
+
+```{r data}
+
+load(file = "DATA/Data/FINAL ALL.RData")
+
+all <- subset(all, is.na(`Site Name`) | PM25 >= 0)
+sitedata <- subset(all,  PM25 >= 0)
+
+names(sitedata)[order(names(sitedata))]
+
+```
+
+## Select Model Covariates
+
+```{r covariates}
+
+
+covariates <- c("background", "urban", "Baseline",
+                "major50", "minor10", "Traffic",
+                "built_s", "built_v", "GHSL.pop",
+                "Green_Area", "pop", 
+                "dist.to.maj", "dist.to.min", "dist.to.road",
+                "Road_dens", "loc.ind", "loc.rural",
+                "all_dens.scaled", "major_dens.scaled", 
+                "minor_dens.scaled","primary_dens.scaled",
+                "PM25MO_2", "PM25PCM",
+                "AOD_adj2", "NDVI_New",
+                "Humid", "Temp", "MaxTemp", "Precip", "Press",
+                "Evapo", "Wind_speed", "Wind_u", "Wind_v")
+
+sitedata$Intercept <- 1
+
+```
+
+
+# Spike-and-Slab Prior Regression for Variable Selection
+
+## Define model formula with beta spike-and-slab priors on covariates with:
+  1. Mean Beta = 0
+  2. SD Beta = 1
+  3. Theta initial value = -3
+
+```{r formula}
+
+f.iid <- logPM25 ~ -1  +  Intercept  +  
+  f(beta, model = "ssvs", mean.beta = 0, prec.beta = 1, hyper = list(theta = list(initial = -3)))
+
+```
+
+## Create matrix of variables
+
+```{r X}
+
+X <- model.matrix(~ all_dens.scaled + AOD_adj2 + background + Baseline + built_s + built_v +
+                    dist.to.maj + dist.to.min + dist.to.road + Easting + Evapo + GHSL.pop +
+                    Green_Area + Humid + land.scaled + loc.ind + loc.rural + major_dens.scaled +
+                    major50 + MaxTemp + minor_dens + minor_dens.scaled + minor10 + NDVI_New +
+                    PM25AQUM + PM25LAEI + PM25MO_2 + PM25PCM + pop + Precip + Press +
+                    primary_dens.scaled + Road_dens.scaled + Rural + suburban + Temp + TNO2_IDW +
+                    traffic + Traffic + urban + Wind_speed + Wind_u + Wind_v,
+                  data = sitedata)
+
+
+```
+
+## Define prior with
+  1. Expected number of non-zero coefficients = 2
+  2. Prior degrees of freedom = 1 
+        - degrees of freedom for estimating the residual variance.
+  3. Prior information weight = 0.01 
+        - Number of observations worth of weight that should be given to the prior estimate of beta
+  4. Diagonal shrinkage = 0
+        - Weight given to the diagonal of the average of diagonals of the precision matrix
+        
+        
+```{r prior}
+
+prior <- SpikeSlabPrior(X, sitedata$logPM25,
+                        expected.model.size = 2,  
+                        prior.df = 1,
+                        prior.information.weight = 0.01,
+                        diagonal.shrinkage = 0)
+
+
+```
+
+## Run model and get summary
+
+```{r model}
+
+model <- lm.spike(logPM25 ~ -1 + Intercept + background + urban + built_v + pop + dist.to.min + Road_dens + all_dens +
+                    minor_dens + PM25MO_2 + PM25PCM + AOD_adj2 + NDVI_New + Temp + Humid + Press + Evapo +
+                    Wind_speed + Wind_u + Wind_v,
+                  data = sitedata, niter = 1000, prior = prior)
+summary(model) 
+
+
+```

@@ -1,0 +1,162 @@
+---
+title: "2-London Air"
+author: "Abi Riley"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+
+Load in packages and set working directory
+
+```{r packages, echo=FALSE}
+
+library(readxl)
+library(ggplot2)
+library(reshape2)
+#library(scico)
+library(dplyr)
+library(tidyr)
+library(xts)
+
+#
+
+```
+
+
+Load in data
+
+```{r data}
+
+
+areas <- c("Barking and Dagenham","Barnet","Bexley","Brent","Brentwood","Bromley","Camden","Castle Point","City of London","Croydon","Dartford","Ealing","Enfield","Greenwich","Hackney","Harringey","Harrow","Havering","Hillingdon","Hounslow","Islington","Kensington and Chelsea","Kingston","Lambeth","Lewisham","Merton","Newham","Reading","Redbridge","Reigate and Banstead","Richmond", "Sevenoaks","Southwark","Sutton","Thurrock","Tower Hamlets","Waltham Forest","Wandsworth","Westminster","Windsor and Maidenhead")
+n.areas <- length(areas)
+
+
+area.PM25.HourlyMean <- list()
+area.PM25.Mean <- list()
+area.NO2 <- list()
+
+for(i in 1:n.areas){
+  area <- areas[i]
+  
+  area.year.PM25.HourlyMean <- list()
+  area.year.PM25.Mean <- list()
+  area.year.NO2 <- list()
+  
+  for(j in 1:10){
+    area.year <- paste(area, j + 2009, sep = " ")
+    
+    if(file.exists(paste("Z:/home/Objective 1/Data/London Air/", area.year, ".csv", sep = ""))){
+    
+      area.year.data <- read.csv(paste("Z:/home/Objective 1/Data/London Air/", area.year, ".csv", sep = ""))
+      area.year.data$Year <- j + 2009
+    
+      if(nrow(subset(area.year.data, speciesCode %in% c("PM25","FINE"))) > 0){
+        area.year.PM25.HourlyMean[[j]] <- subset(area.year.data, speciesCode %in% c("PM25","FINE") & reportItemName == "Hourly mean (ug/m3):")
+        
+        area.year.PM25.Mean[[j]] <- subset(area.year.data, speciesCode %in% c("PM25","FINE") & reportItemName == "Mean: (AQS Objective < 25ug/m3)")
+      } else {
+        
+      }
+    
+      if(nrow(subset(area.year.data, speciesCode == "NO2")) > 0){
+      area.year.NO2[[j]] <- subset(area.year.data, speciesCode == "NO2" & reportItemName == "Mean: (AQS Objective < 40ug/m3)")
+      } else {
+        
+      }
+    } else{
+      
+    }
+  }
+  
+  if(length(area.year.PM25.HourlyMean) > 0){
+    area.PM25.HourlyMean[[i]] <- do.call(rbind, area.year.PM25.HourlyMean)
+    area.PM25.Mean[[i]] <- do.call(rbind, area.year.PM25.Mean)
+  } else {
+    
+  }
+  
+  if(length(area.year.NO2) > 0){
+    area.NO2[[i]] <- do.call(rbind, area.year.NO2)
+  } else {
+    
+  }
+  
+}
+
+PM25.HourlyMean <- do.call(rbind, area.PM25.HourlyMean)
+PM25.Mean <- do.call(rbind, area.PM25.Mean)
+NO2 <- do.call(rbind, area.NO2)
+
+
+```
+
+Wide to Long
+
+``` {r melt}
+
+PM25.HourlyMean.long <- melt(PM25.HourlyMean, id.vars = c("site", "Year"),
+                     measure.vars = c("month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12"),
+                     variable.name = "Month",
+                     value.name= "PM2.5 Hourly Mean")
+PM25.HourlyMean.long$Month <- as.numeric(factor(PM25.HourlyMean.long$Month, levels = c("month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12")))
+PM25.HourlyMean.long <- unique(PM25.HourlyMean.long)
+
+PM25.Mean.long <- melt(PM25.Mean, id.vars = c("site", "Year"),
+                     measure.vars = c("month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12"),
+                     variable.name = "Month",
+                     value.name= "PM2.5 Mean")
+PM25.Mean.long$Month <- as.numeric(factor(PM25.Mean.long$Month, levels = c("month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12")))
+PM25.Mean.long <- unique(PM25.Mean.long)
+
+NO2.long <- melt(NO2, id.vars = c("site", "Year"),
+                     measure.vars = c("month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12"),
+                     variable.name = "Month",
+                     value.name= "NO2 Mean")
+NO2.long$Month <- as.numeric(factor(NO2.long$Month, levels = c("month1", "month2", "month3", "month4", "month5", "month6", "month7", "month8", "month9", "month10", "month11", "month12")))
+NO2.long <- unique(NO2.long)
+
+
+```
+
+Join
+
+```{r subset}
+
+PM25 <- merge(PM25.HourlyMean.long, PM25.Mean.long, by = c("Year","Month","site"), all = TRUE)
+LA <- merge(PM25, NO2.long, by = c("Year","Month","site"), all = TRUE)
+
+```
+
+Merge with site data and fix variables and time
+
+```{r site_data}
+
+LA.sites <- read.csv("Objective 1/Data/London Air/Sites.csv")
+LA.sites["sitename"][LA.sites["sitename"] == "#NAME?"] <- "- National Physical Laboratory, Teddington"
+
+LA["site"][LA["site"] == "London Teddington Bushy Park "] <- "London Teddington Bushy Park"
+LA["site"][LA["site"] == "Ealing - Acton Vale "] <- "Ealing - Acton Vale"
+LA["site"][LA["site"] == "Sutton - Beddington Lane "] <- "Sutton - Beddington Lane"
+
+
+
+LA.sites <- LA.sites[,c("sitename", "easting", "northing", "latitude", "longitude", "sitetype")]
+LA <- merge(LA, LA.sites, by.x = "site", by.y = "sitename", all.x = TRUE)
+LA$Time <- (LA$Year - 2010)*12 + LA$Month
+
+```
+
+Save
+
+``` {r save}
+
+save(LA, file = "Z:/home/DATA/Data/2-London Air.RData")
+
+```

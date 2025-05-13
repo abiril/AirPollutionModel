@@ -1,0 +1,370 @@
+---
+title: "9-NDVI 3"
+author: "Abi Riley"
+date: "2024-05-29"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+```
+
+Packages
+
+```{r packages}
+
+library(dplyr)
+library(terra)
+library(sf)
+library(ggplot2)
+library(gstat)
+library(tidyverse)
+
+```
+
+Grids for GEE
+
+``` {r grid}
+
+x <- rep(seq(500500, 587500, 1000), 88)
+y.coords <- rep(seq(153500, 224500, 1000), 90)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs ="EPSG:27700")
+
+grid.df <- as.data.frame(grid, xy = TRUE)
+write.csv(grid.df, file = "DATA/Data/grid_27700.csv")
+
+grid.sf <- st_as_sf(grid.df, coords = c("x","y"), crs = "EPSG:27700")
+grid.sf <- st_transform(grid.sf, crs = 4326)
+grid.df <- cbind(st_drop_geometry(grid.sf), st_coordinates(grid.sf))
+write.csv(grid.df, file = "DATA/Data/grid_27700to4326.csv")
+
+
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+```
+
+
+Load in data
+
+```{r data}
+years <- 2010:2019
+
+NDVI2010 <- read.csv("DATA/Data/9-NDVI/MODIS_NDVI_2014_1.csv")
+times <- c("2010_1", "2010_2", "2011_1", "2011_2",
+           "2012_1", "2012_2", "2013_1", "2013_2",
+           "2014_1", "2014_2", "2015_1", "2015_2",
+           "2016_1", "2016_2", "2017_1", "2017_2",
+           "2018_1", "2018_2", "2019_1", "2019_2")
+months  <- rep(c(1:6,7:12),6)
+
+#NEED TO SPLIT THE TIMES SOMEHOW AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
+
+NDVI <- list()
+NDVI.list <- list()
+NDVI.block <- list()
+for(i in 1:20){
+  NDVI[[i]] <-  read.csv(paste("DATA/Data/9-NDVI/MODIS_NDVI_", times[i], ".csv", sep = ""))
+  NDVI[[i]] <- subset(NDVI[[i]], id %in% grid.df$id)
+  NDVI.list[[i]] <- split(NDVI[[i]], NDVI[[i]]$composite_start)
+  
+  NDVI.month <- list()
+  for(j in 1:6){
+      NDVI.month[[j]] <- NDVI.list[[i]][[j]]
+      
+      NDVI.month[[j]]$Year <- as.numeric(str_split(NDVI.month[[j]]$composite_start, "-")[[1]][1])
+      NDVI.month[[j]]$month <- as.numeric(str_split(NDVI.month[[j]]$composite_start, "-")[[1]][2])
+      NDVI.month[[j]]$Time <- (NDVI.month[[j]]$Year - 2010)*12 + NDVI.month[[j]]$month
+      
+  }
+  NDVI.block[[i]] <- do.call(rbind, NDVI.month)
+                       
+}
+
+NDVI.df <- do.call(rbind, NDVI.block)
+unique(NDVI.df$Time)
+
+NDVI.df <- NDVI.df[,c(2,9,11,12,13)]
+names(NDVI.df)[1] <- "NDVI"
+save(NDVI.df, file = "DATA/Data/9-NDVI/MonthlyNDVI.RData")
+
+
+```
+
+
+```{r load}
+
+grid <- read.csv("DATA/Data/grid_27700to4326.csv")
+grid.df <- as.data.frame(grid, xy = TRUE)
+
+load(file = "DATA/Data/9-NDVI/MonthlyNDVI.RData")
+
+head(NDVI.df)
+
+NDVI.grid <- merge(NDVI.df, grid.df, by = "id", all = TRUE)
+
+NDVI.grid <- unique(na.omit(NDVI.grid))
+
+
+min(grid$id)
+hist(NDVI.df$id)
+
+
+``` 
+
+Full actual grid 
+
+```{r grid}
+
+x <- rep(seq(500500, 587500, 1000), 72)
+y.coords <- rep(seq(153500, 224500, 1000), 88)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs = "EPSG:27700")
+
+xy <- terra::xyFromCell(grid, 1:ncell(grid))
+coop <- st_as_sf(as.data.frame(xy), coords = c("x", "y"),
+                 crs =  "EPSG:27700")
+
+```
+
+
+Inverse Distance Weighting Interpolation
+
+```{r IDW}
+
+NDVI.df <- NDVI.grid
+
+NDVI.df$NDVI100 <- NDVI.df$NDVI
+
+NDVI.df <- subset(NDVI.df, !is.na(X) & !is.na(Y))
+NDVI.sf <- st_as_sf(NDVI.df, coords = c("X","Y"), crs = "EPSG:4326")
+NDVI.sf <- st_transform(NDVI.sf, crs = "EPSG:27700")
+NDVI.df <- cbind(st_drop_geometry(NDVI.sf), st_coordinates(NDVI.sf))
+
+LIDW <- list()
+for (i in 1:120){
+  NDVImonth <- subset(NDVI.df, Time == i & !is.na(NDVI100) & !is.na(X) & !is.na(Y))
+  NDVImonth.sf <- st_as_sf(NDVImonth, coords = c("X","Y"), crs = "EPSG:27700")
+  g <- gstat(formula = NDVI100 ~ 1, locations = NDVImonth.sf, nmax = 8, set = list(idp = 2))
+  LIDW[[i]] <- predict(g, coop)
+  LIDW[[i]]$Time <- i
+  LIDW.month <- LIDW[[i]]
+}
+
+
+
+LIDW.df <- cbind(st_drop_geometry(LIDW[[1]]), st_coordinates(coop))
+for (i in 2:120){
+  LIDW.df <- rbind(cbind(st_drop_geometry(LIDW[[i]]), st_coordinates(coop)), LIDW.df)
+} 
+                   
+names(LIDW.df)
+NDVI <- merge(NDVI.df, LIDW.df, by.x = c("X","Y","Time"), by.y = c("X","Y","Time"), all = TRUE) %>% select(-c("X.1","id","NDVI","Year","month", "NDVI100", "var1.var"))
+
+names(NDVI)
+names(NDVI)[4] <- "NDVI"
+
+NDVI <- unique(na.omit(NDVI))
+
+save(NDVI, file  = "DATA/Data/9-NDVI/9-NDVI.RData")
+
+```
+
+Plot
+
+```{r plot}
+library(viridis)
+
+load(file = "Z:/home/DATA/Data/9-NDVI/9-NDVI.RData")
+
+NDVI1 <- subset(NDVI, Time <= 24)
+ggplot() +
+  geom_raster(data = NDVI1, aes(x = X, y = Y, fill = NDVI)) +
+  scale_fill_viridis(option="magma", na.value = "transparent") +
+  facet_wrap(vars(Time), ncol = 6) +
+    theme(panel.spacing = unit(0, "points"),
+        strip.background = element_blank(),
+        #strip.text.x = element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  coord_equal() 
+
+ggplot() +
+  geom_raster(data = NDVI, aes(x = X, y = Y, fill = NDVI)) +
+  scale_fill_viridis(option="magma", na.value = "transparent") +
+  facet_wrap(vars(Time), ncol = 12) +
+    theme(panel.spacing = unit(0, "points"),
+        strip.background = element_blank(),
+        #strip.text.x = element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  coord_equal() 
+
+
+```
+
+
+Categories
+
+https://earthobservatory.nasa.gov/features/MeasuringVegetation
+
+Barren areas of rock, sand or snow < 0.1 
+Shrub and grassland 0.2 - 0.3
+Temperate and tropical rainforest 0.6 - 0.8
+
+
+
+https://custom-scripts.sentinel-hub.com/custom-scripts/sentinel-2/ndvi/
+
+-0.5 < NDVI ≤ 0	#eaeaea	
+ 0 < NDVI ≤ .1	#ccc682	
+.1 < NDVI ≤ .2	#91bf51	
+.2 < NDVI ≤ .3	#70a33f	
+.3 < NDVI ≤ .4	#4f892d	
+.4 < NDVI ≤ .5	#306d1c	
+.5 < NDVI ≤ .6	#0f540a	
+.6 < NDVI ≤ 1.0	#004400
+
+```{r cat}
+
+library(ggopenair)
+
+ggplot() +
+  geom_raster(data = NDVI, aes(x = X, y = Y, fill = NDVI)) +
+  scale_opencolours_c(trans = "reverse") +
+  facet_wrap(vars(Time), ncol = 12) +
+    theme(panel.spacing = unit(0, "points"),
+        strip.background = element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  coord_equal()
+
+ggplot() +
+  geom_raster(data = NDVI, aes(x = X, y = Y, fill = NDVI)) +
+  scale_opencolours_b(breaks = c(seq(-0.2, 1, 0.1))) +
+  facet_wrap(vars(Time), ncol = 12) +
+    theme(panel.spacing = unit(0, "points"),
+        strip.background = element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  coord_equal()
+
+
+scale_fill_manual(
+  values = c("#eaeaea", "#ccc682", "#91bf51", "#70a33f", "#4f892d", "#306d1c", "#0f540a", "#004400"),
+  breaks = c(-0.2, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1)
+)
+
+scale_fill_manual(
+  values = c("#eaeaea", "#ccc682", "#91bf51", "#70a33f", "#4f892d", "#306d1c", "#0f540a", "#004400"),
+  breaks = c("0", "1", "2", "3", "4", "5", "6", "7")
+)
+
+NDVI$NDVI.cat <- factor(ifelse(NDVI$NDVI <= 0, 0,
+                               ifelse(NDVI$NDVI <= 0.1, 1,
+                                      ifelse(NDVI$NDVI <= 0.2, 2,
+                                             ifelse(NDVI$NDVI <= 0.3, 3,
+                                                    ifelse(NDVI$NDVI <= 0.4, 4,
+                                                           ifelse(NDVI$NDVI <= 0.5, 5,
+                                                                  ifelse(NDVI$NDVI <= 0.6, 6, 7))))))))
+
+ggplot() +
+  geom_raster(data = NDVI, aes(x = X, y = Y, fill = NDVI.cat)) +
+  facet_wrap(vars(Time), ncol = 24) +
+  scale_fill_manual(
+    values = c("#eaeaea", "#ccc682", "#91bf51", "#70a33f", "#4f892d", "#306d1c", "#0f540a", "#004400"),
+    breaks = c("0", "1", "2", "3", "4", "5", "6", "7")
+  ) +
+    theme(panel.spacing = unit(0, "points"),
+        strip.background = element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  coord_equal()
+
+NDVI.6years <- subset(NDVI, Time >= 49)
+
+ggplot() +
+  geom_raster(data = NDVI.6years, aes(x = X, y = Y, fill = NDVI.cat)) +
+  facet_wrap(vars(Time), ncol = 12) +
+  scale_fill_manual(
+    values = c("#eaeaea", "#ccc682", "#91bf51", "#70a33f", "#4f892d", "#306d1c", "#0f540a", "#004400"),
+    breaks = c("0", "1", "2", "3", "4", "5", "6", "7")
+  ) +
+    theme(panel.spacing = unit(0, "points"),
+        strip.background = element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  coord_equal()
+
+#Barren areas of rock, sand or snow < 0.1 
+#Shrub and grassland 0.2 - 0.3
+#Temperate and tropical rainforest 0.6 - 0.8
+
+scale_colour_manual(
+  values = c("#eaeaea", "#ccc682",  "#70a33f", "#306d1c", "#004400"),
+  breaks = c("Barren Areas", "Shrub land", "Grassland", "Forest", "Rainforest")
+)
+
+NDVI$NDVI.cat <- factor(ifelse(NDVI$NDVI <= 0.1, "Barren Areas",
+                                      ifelse(NDVI$NDVI <= 0.2, "Shrub land",
+                                             ifelse(NDVI$NDVI <= 0.4, "Grassland",
+                                                    ifelse(NDVI$NDVI <= 0.6, "Forest", "Rainforest")))))
+
+NDVI.6years <- subset(NDVI, Time >= 49)
+
+ggplot() +
+  geom_raster(data = NDVI.6years, aes(x = X, y = Y, fill = NDVI.cat)) +
+  facet_wrap(vars(Time), ncol = 12) +
+  scale_fill_manual(
+  values = c("#eaeaea", "#ccc682",  "#70a33f", "#306d1c", "#004400"),
+  breaks = c("Barren Areas", "Shrub land", "Grassland", "Forest", "Rainforest")
+  ) +
+    theme(panel.spacing = unit(0, "points"),
+        strip.background = element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  coord_equal()
+
+
+```

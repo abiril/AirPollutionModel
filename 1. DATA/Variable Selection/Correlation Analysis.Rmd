@@ -1,0 +1,197 @@
+---
+title: "Correlation Analysis"
+author: "Abi Riley"
+date: "2025-05-13"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+```
+
+## Processing AURN monitoring site data
+
+Load in packages
+
+```{r packages, echo=FALSE}
+
+library(sp)
+library(INLA)
+library(gstat)
+library(devtools)
+library(sf)
+library(inlabru)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(corrplot)
+library(pheatmap)
+
+```
+
+
+## Load in data
+
+```{r data}
+
+load(file = "DATA/Data/FINAL ALL.RData")
+
+all <- subset(all, is.na(`Site Name`) | PM25 >= 0)
+sitedata <- subset(all,  PM25 >= 0)
+
+names(sitedata)[order(names(sitedata))]
+
+
+```
+
+# Correlation between variables
+
+## All Variables
+
+```{r all}
+
+data <- sitedata[,c("PM25", "logPM25", "Time",   
+                    "all_dens.scaled","AOD_adj2",                  
+                    "background", "Baseline",                    
+                    "built_s", "built_v",                
+                    "dist.to.maj", "dist.to.min", "dist.to.road",          
+                    "Easting", "Evapo",                  
+                    "GHSL.pop", "Green_Area", "Humid",                  
+                    "land.scaled",                    
+                    "loc.ind", "loc.rural",               
+                    "major_dens.scaled", "major50", "MaxTemp", "minor_dens",             
+                    "minor_dens.scaled", "minor10", "NDVI_New",               
+                    "PM25AQUM", "PM25LAEI", "PM25MO_2", "PM25PCM",                
+                    "PM25Sat", "pop", "Precip","Press",  
+                    "primary_dens.scaled","primaryonly_dens.scaled",                   
+                    "Road_dens.scaled", "Rural", "suburban", "Temp",                 
+                    "traffic", "Traffic",                
+                    "urban", "Wind_speed","Wind_u", "Wind_v")]
+
+corr <- cor(data, use = "pairwise.complete.obs")
+cor(data)[1,]
+
+```
+
+
+## Corrplot using the package 'corrplot' to create plot 
+
+```{r plot}
+
+corrplot(corr, method = "color", order = "FPC", type = "lower", 
+         tl.col = "black", tl.srt = 45)
+
+
+cor(data, use = "pairwise.complete.obs")[1,]
+
+
+```
+
+Or with numbers instead of colours:
+
+```{r plot2}
+
+corrplot(corr, method = 'number')
+
+
+```
+
+## A clustered heatmap with the package 'pheatmap'
+
+This clusters variables with similar correlations and that explain similar processes.
+
+```{r pheatmap}
+
+pheatmap::pheatmap(corr, scale = "row")
+
+```
+
+## Hierarchical Clustering 
+
+We can also create hierarchical clustering based on distances.
+
+    Distance = 1 - Correlation
+
+Then the function 'hclust' to plot a correlation matrix with dendograms of the different layers of correlation.
+
+We can plot just the dendogram and we can cut the dendogram at different k groups
+
+
+```{r plot}
+
+dist <- as.dist(1 - corr)
+tree <- hclust(dist, method = "complete")
+plot(tree)
+dend <- as.dendrogram(tree)
+plot(dend)
+cutree(tree, k = 5)
+
+
+```
+
+
+# Correlation by month
+
+We can explore how correlation between the variable and PM$_{2.5}$ change by month.
+
+We select just the continuous variables
+
+```{r continuous}
+
+continuous.covariates <- c("all_dens.scaled","AOD_adj2",                  
+                "Baseline",                    
+                "built_s", "built_v",                
+                "dist.to.maj", "dist.to.min", "dist.to.road",          
+                "Easting", "Evapo",                  
+                "GHSL.pop", "Green_Area", "Humid",                  
+                "land.scaled", "loc.ind", "loc.rural",               
+                "major_dens.scaled","MaxTemp",             
+                "minor_dens.scaled", "NDVI_New",               
+                "PM25MO_2", "PM25PCM",                
+                "pop", "Precip","Press",  
+                "primary_dens.scaled",                   
+                "Road_dens.scaled", "Temp",                 
+                "Wind_speed","Wind_u", "Wind_v")
+
+```
+
+Using a loop over each variable, calculate and print the correlation between PM$_{2.5}$ and the variable each calendar month. Plot for each variable.
+
+```{r corr-month}
+
+par(mfrow=c(4,8))
+for(j in 1:length(continuous.covariates)){
+  cor <- c()
+  for(i in 1:12){
+    var <- continuous.covariates[j]
+    sitedata.month <- subset(sitedata, month == i)
+    cor[i] <- cor(sitedata.month[,c(paste(var), "logPM25")], use = "pairwise.complete.obs")[1,2]
+  }
+  plot(1:12, cor, type = "l", main = var)
+  print(var)
+  #print(range(cor))
+}
+
+
+```
+
+We can also look at the 95\% range of the correlation values by calendar month.
+
+```{r corr-month-95}
+
+par(mfrow=c(4,8))
+for(j in 1:length(continuous.covariates)){
+  cor <- c()
+  for(i in 1:12){
+    var <- continuous.covariates[j]
+    sitedata.month <- subset(sitedata, month == i)
+    cor[i] <- cor(sitedata.month[,c(paste(var), "logPM25")], use = "pairwise.complete.obs")[1,2]
+  }
+  plot(1:12, cor, type = "l", main = var)
+  print(var)
+  #print(range(cor))
+  print(quantile(cor, 0.025))
+  print(quantile(cor, 0.975))
+}
+
+```

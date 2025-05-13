@@ -1,0 +1,201 @@
+---
+title: "C - Joining All Data w Met Office"
+output: html_document
+date: "2024-08-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(sf)
+library(terra)
+library(purrr)
+library(rquery)
+library(rqdatatable)
+
+```
+
+
+Load in data, fix time and create siteid
+
+```{r data}
+
+load(file = "DATA/Data/Sitedata/B18-Sitedata_AOD_TNO2_PM25Sat.RData")
+load(file = "DATA/Data/All/B18-All_AOD_TNO2_PM25Sat.RData")
+
+```
+
+
+BIG MERGE
+
+Watch for numbered subsetting on the names
+
+```{r merge}
+
+names(all.pm25sat)
+names(sitedata.pm25sat)
+
+all <- all.pm25sat %>% select(-c("x", "y"))
+names(all)[names(all) %in% c("X", "Y")] <-  c("Easting","Northing")
+
+sitedata <- sitedata.pm25sat
+
+names(sitedata)[names(sitedata) %in% c("siteid.x","Site.Name","Environment.Type", "X", "Y")] <- c("siteid","Site Name", "Environment Type", "Easting", "Northing")
+
+data <- natural_join(sitedata, all, by = c("Easting","Northing","Time"), jointype = "FULL")
+
+
+summary(data)
+
+
+
+```
+
+Correlations
+
+```{r}
+names(data)
+cor(data[,c("PM25","AOD_IDW","Evapo","Humid","MaxTemp","NDVI","PM25PCM","pop","Precip","Press","Wind_u","Wind_v","PM25AQUM", "dist.to.maj", "dist.to.min", "dist.to.road", "Road_dens", "PM25MO","PM25MO_2", "NDVI", "NDVI_New", "motorway_dens", "primary_dens", "major_dens","primaryonly_dens","all_dens")], use = "pairwise.complete.obs")
+
+# no site data near motorways
+
+cor(data[,c("NO2","TNO2_IDW","Evapo","Humid","MaxTemp","NDVI","NO2PCM","pop","Precip","Press","Wind_u","Wind_v","NO2AQUM","dist.to.maj", "dist.to.min", "dist.to.road", "Road_dens", "NO2MO","NO2MO_2", "NDVI", "NDVI_New","primary_dens", "major_dens","primaryonly_dens","all_dens")], use = "pairwise.complete.obs")
+
+plot(data$PM25, data$AOD_IDW)
+plot(data$Evapo, data$AOD_IDW)
+plot(data$PM25, data$NDVI)
+plot(data$PM25, data$Temp)
+plot(data$PM25, data$PM25AQUM)
+plot(data$PM25, data$dist.to.road)
+plot(data$PM25, data$PM25MO)
+plot(data$PM25, data$NDVI)
+plot(data$PM25, data$NDVI_New)
+plot(data$PM25, data$primary_dens)
+plot(data$PM25, data$major_dens)
+
+plot(data[,c("PM25", "AOD_IDW")])
+
+sitedata <- subset(data, !is.na(`Site Name`))
+ggplot() +
+  geom_point(sitedata, mapping = aes(x = PM25, y = AOD_IDW, color = Time))
+
+hist(sitedata$AOD_IDW)
+hist(all$dist.to.road)
+
+sitedata.month <- subset(sitedata, Time == 34)
+
+hist(sitedata.month$Temp)
+
+#save(data, file = "Z:/home/Jobs/ST_INLA/FINAL/FINAL/NEW/DATA PREP FINAL/Data/Site Data_no_fill.RData")
+#load(file = "Jobs/ST_INLA/FINAL/FINAL/Full Data Processing/Greater London Datasets/New/Data/Site Data_no_fill.RData")
+
+unique(data$Time)
+
+```
+
+Testing correlations
+
+```{r corr}
+
+data$AOD_adj <- data$AOD_IDW/data$BLH
+data$AOD_adj2 <- data$AOD_IDW * (1 - data$Humid*0.01)
+
+data$logPM25 <- log(data$PM25)
+data$logNO2 <- log(data$NO2)
+
+cor(data[,c("PM25","logPM25", "AOD_IDW","AOD_adj", "AOD_adj2")], use = "pairwise.complete.obs")
+cor(data[,c("PM25","logPM25", "primary_dens", "major_dens","primaryonly_dens","all_dens")], use = "pairwise.complete.obs")
+
+cor(data[,c("NO2", "TNO2_IDW")],use = "pairwise.complete.obs")
+
+sitedata <- subset(data, !is.na(`Site Name`) & !is.na(PM25))
+sitedata$Month <- sitedata$Time - (sitedata$Year - 2010)*12
+sitedata <- subset(sitedata, !is.na(Month))
+
+ggplot() +
+  geom_point(sitedata, mapping = aes(x = PM25, y = AOD_IDW)) +
+  geom_smooth(method = "lm") +
+  theme(legend.position = "none") +
+  #theme_void() + 
+  facet_wrap(Month ~ .,  scales = "free")
+
+corr <- c()
+for (i in 1:12){
+  sitedata.month <- subset(sitedata, Month == i)
+  corr[i] <- cor(sitedata.month[,c("PM25","logPM25","AOD_IDW", "AOD_adj", "AOD_adj2",
+                                   "PM25PCM")], use = "pairwise.complete.obs")[3,6]
+}
+
+corr
+plot(corr)
+
+```
+
+
+``` {r}
+data$Year <- (data$Time-1) %/% 12 + 2010
+
+save(data, file = "DATA/Data/All/C6-All with Road Dens.RData")
+
+pm25.year <- data %>% aggregate(PM25 ~ Year + siteid, FUN = mean)
+pcm.year <-  data %>% aggregate(PM25PCM ~ Year + siteid, FUN = mean)
+aod.year <-  data %>% aggregate(AOD_IDW ~ Year + siteid, FUN = mean)
+aod2.year <-  data %>% aggregate(AOD_adj ~ Year + siteid, FUN = mean)
+
+aod.year <- cbind(aod.year, aod2.year$AOD_adj)
+names(aod.year)[4] <- "AOD_adj"
+
+pm25 <- merge(pm25.year, aod.year, by = c("Year", "siteid"))
+cor(pm25) 
+
+plot(pm25$PM25, pm25$AOD_IDW)
+
+```
+
+
+Add some additional variables
+
+```{r add2}
+
+ALL <- data
+
+ALL$month <- (ALL$Time-1) %% 12 + 1
+ALL$Year <- (ALL$Time-1) %/% 12 + 2010
+
+ALL$summer <- ifelse(ALL$month %in% c(6,7,8), 1, 0)
+ALL$autumn <- ifelse(ALL$month %in% c(9,10,11), 2, 0)
+ALL$winter <- ifelse(ALL$month %in% c(12,1,2), 3, 0)
+ALL$spring <- ifelse(ALL$month %in% c(3,4,5), 4, 0)
+
+ALL$season <- as.factor(ALL$summer + ALL$autumn + ALL$winter + ALL$spring)
+
+ALL$logPM25 <- log(ALL$PM25)
+ALL$logNO2 <- log(ALL$NO2)
+
+names(ALL)
+all <- st_drop_geometry(ALL)
+head(all)
+
+save(all, file = "DATA/Data/C6-All and Sitedata w Road Dens.RData")
+
+sitedata <- subset(all, !is.na(`Site Name`))
+
+```
+
+
+
+
+
+
+
+
+

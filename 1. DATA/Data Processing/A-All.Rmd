@@ -1,0 +1,712 @@
+---
+title: "A - All w Met Office"
+author: "Abi Riley"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(terra)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(plyr)
+
+```
+
+
+```{r grid}
+
+Wards <- read_sf("Jobs/ST_INLA/Shapefiles/London_Ward.shp")
+London <- st_transform(Wards, crs = "EPSG:27700" )
+
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+x <- rep(seq(502500, 563500, 1000), 49)
+y.coords <- rep(seq(154500, 202500, 1000), 62)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+extent <- ext(503000,563000,154000,202000)
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs ="EPSG:27700")
+
+xy <- terra::xyFromCell(grid, 1:ncell(grid))
+coop <- st_as_sf(as.data.frame(xy), coords = c("x", "y"),
+                 crs = "EPSG:27700")
+
+Time <- rep(seq(1, 120, 1), 3038)
+grid.s <- do.call(rbind, replicate(120, empty, simplify = FALSE))
+grid.st <- cbind(grid.s, Time[order(Time)])
+names(grid.st)[4] <- "Time"
+
+```
+
+
+
+# Site Data
+1-AURN: "DATA/Data/1-AURN.RData"
+2-London Air: "DATA/Data/2-London Air.RData"
+3-AURN and LA: "DATA/Data/3-AURN and LA Data.RData"
+
+# Grid Data
+4-Climate: "DATA/Data/4-Climate.RData"
+5-AOD: "DATA/Data/5-AOD/5-AOD.RData"
+6-NO2 OMI: "DATA/Data/6-NO2 OMI.RData"
+7-Boundary Layer Height: "DATA/Data/7-BLH.RData"
+8-PCM: "DATA/Data/8-PCM.RData"	
+9-NDVI: "DATA/Data/9-NDVI.RData"
+10-Rural-Urban: "DATA/Data/10-Urban-Rural.RData"
+11-GHSL: "DATA/Data/11-GHSL.RData"
+12-Population: "DATA/Data/12-Population.RData"
+13-Wind and Evapo: "DATA/Data/13-Wind and Evapo.RData"
+14-AQUM: "DATA/Data/14-AQUM.RData"
+15-Corine: "DATA/Data/15-Corine.RData"
+16-LAEI:"DATA/Data/16-LAEI_NO2.csv" and "DATA/Data/16-LAEI.csv"
+17-Road_Density: "DATA/Data/17-Road_Density.RData"
+18-Greenspace: "DATA/Data/18-Greenspace.RData"
+
+
+
+```{r sitedata}
+
+
+load(file = "DATA/Data/3-AURN and LA Data.RData")
+
+sitedata <- subset(sitedata, Easting >= 502000 & Easting <= 564000 & Northing >= 153000 & Northing <= 203000)
+
+sitedata.sf <- st_as_sf(sitedata, coords = c("Easting","Northing"), crs = "EPSG:27700")
+
+```
+
+
+Climate
+
+```{r climate}
+
+load(file = "DATA/Data/4-Climate.RData")
+
+climate <- subset(climate, Year %in% seq(2010,2019,1))
+climate$Time <- (climate$Year - 2010)*12 + climate$month
+
+sitedata.sf$Year <- ((sitedata.sf$Time - 1) %/% 12) + 2010
+
+
+sitedata.df <- list()
+for(i in 1:120){
+  climate.month <- subset(climate, Time == i)[,c("x","y", "Temp", "Humid",   "Precip",  "MaxTemp", "Press")]
+  climate.r <- rast(climate.month, type = "xyz", crs = "EPSG:27700")
+  climate.r <- crop(climate.r, extent)
+  
+  sitedata.month <- st_as_sf(subset(sitedata.sf, Time == i), crs = "EPSG:27700")
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(climate.r, sitedata.month)) 
+}
+
+
+sitedata.climate <- do.call(rbind, sitedata.df)
+
+save(sitedata.climate, file = "DATA/Data/Sitedata/A1-Sitedata.RData")
+
+climate <- left_join(grid.st, climate, by = c("x", "y", "Time"))
+
+save(climate, file = "DATA/Data/All/A1-All.RData")
+
+
+```
+
+PCM
+
+```{r PCM}
+
+load(file = "DATA/Data/8-PCM.RData")
+
+PCM <- subset(PCM, Year %in% seq(2010,2019,1))
+names(PCM)[names(PCM) %in% c("PM2.5", "NO2")] <- c("PM25PCM", "NO2PCM")
+
+sitedata.df <- list()
+for(i in 1:10){
+  PCM.year <- subset(PCM, Year == i + 2009)
+  PCM.r <- rast(PCM.year, type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.year <- subset(sitedata.climate, Year == i + 2009)
+  sitedata.df[[i]] <- cbind(sitedata.year, terra::extract(PCM.r, sitedata.year)) %>% select(-c("ID.1", "Year.1"))
+  
+}
+
+sitedata.climate.pcm <- do.call(rbind, sitedata.df)
+
+cor(st_drop_geometry(sitedata.climate.pcm[,c("PM25","PM25.Hourly.LA","PM25PCM")]), use = "pairwise.complete.obs")
+
+save(sitedata.climate.pcm, file = "DATA/Data/Sitedata/A2-Sitedata.RData")
+
+all.climate.pcm <- left_join(climate, PCM, by = c("x", "y", "Year"))
+
+save(all.climate.pcm, file = "DATA/Data/All/A2-All.RData")
+
+
+
+```
+
+
+
+Population
+
+```{r pop}
+
+load("DATA/Data/12-Population.RData")
+
+pop.r <- rast(pop.df, type = "xyz", crs = "EPSG:27700")
+
+sitedata.climate.pcm.pop <- cbind(sitedata.climate.pcm, terra::extract(pop.r, sitedata.climate.pcm)) %>% select(-c("ID.1"))
+
+save(sitedata.climate.pcm.pop, file = "DATA/Data/Sitedata/A3-Sitedata.RData")
+
+pop.r <- terra::project(pop.r, bbox)
+pop.df <- as.data.frame(pop.r, xy = TRUE)
+
+all.climate.pcm.pop <- left_join(all.climate.pcm, pop.df, by = c("x", "y"))
+save(all.climate.pcm.pop, file = "DATA/Data/All/A3-All.RData")
+
+
+```
+
+NDVI
+
+```{r NDVI}
+
+load("DATA/Data/9-NDVI 2.RData")
+
+NDVI.all$NDVI <- ifelse(NDVI.all$NDVI >= 0, NDVI.all$NDVI, 0)
+
+NDVI.df <- list()
+sitedata.df <- list()
+for(i in 1:120){
+  NDVI <- subset(NDVI.all, Time == i)
+  ndvi.r <- rast(NDVI, type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.year <- subset(sitedata.climate.pcm.pop, Time == i)
+  sitedata.df[[i]] <- cbind(sitedata.year, terra::extract(ndvi.r, sitedata.year)) %>%
+    select(-c("ID.1", "Time.1"))
+  
+  NDVI.r <- terra::project(ndvi.r, grid)
+  NDVI.df[[i]] <- as.data.frame(NDVI.r, xy = TRUE)
+  NDVI.df[[i]]$Time <- i
+
+}
+
+
+sitedata.pop.ndvi <- do.call(rbind, sitedata.df)
+save(sitedata.pop.ndvi, file = "DATA/Data/Sitedata/A4-Sitedata.RData")
+
+NDVI.all <- do.call(rbind, NDVI.df)
+
+all.climate.pcm.pop.ndvi <- left_join(all.climate.pcm.pop, NDVI.all, by = c("x", "y","Time"))
+
+save(all.climate.pcm.pop.ndvi, file = "DATA/Data/All/A4-All.RData")
+
+#load("DATA/Data/Sitedata/A4-Sitedata.RData")
+#load("DATA/Data/All/A4-All.RData")
+
+```
+
+Wind and Evapo - WGS 84
+BLH - WGS 84
+
+```{r BLH}
+
+load("DATA/Data/7-BLH.RData")
+
+sitedata.df <- list()
+blh.df <- list()
+for(i in 1:120){
+  blh.month <- subset(LBLH.DF, Time == i)
+  blh.r <- rast(blh.month, type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.month <- subset(sitedata.pop.ndvi, Time == i)
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(blh.r, sitedata.month)) %>% select(-c(
+    "ID.1", "Time.1"))
+  
+}
+
+sitedata.pop.ndvi.blh <- do.call(rbind, sitedata.df)
+
+save(sitedata.pop.ndvi.blh, file = "DATA/Data/Sitedata/A5b-Sitedata.RData")
+
+names(LBLH.DF)
+LBLH.DF$x <- as.numeric(LBLH.DF$x)
+LBLH.DF$y <- as.numeric(LBLH.DF$y)
+all.climate.pcm.pop.ndvi.blh <- left_join(all.climate.pcm.pop.ndvi, LBLH.DF, by = c("x", "y","Time"))
+
+save(all.climate.pcm.pop.ndvi.blh, file = "DATA/Data/All/A5b-All.RData")
+
+```
+
+
+Wind and Evapo
+
+```{r data}
+
+load(file = "DATA/Data/13-Wind and Evapo.RData")
+
+sitedata.df <- list()
+for(i in 1:120){
+  
+  era5.month <- subset(era5.df, Time == i)
+  era5.r <- rast(era5.month, type = "xyz", crs = "EPSG:27700")
+
+  sitedata.month <- subset(sitedata.pop.ndvi.blh, Time == i)
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(era5.r, sitedata.month)) %>% select(-c("ID.1", "Time.1", "geometry"))
+}
+
+
+sitedata.pop.ndvi.blh.era5 <- do.call(rbind, sitedata.df)
+
+save(sitedata.pop.ndvi.blh.era5 , file = "DATA/Data/Sitedata/A6b-Sitedata.RData")
+
+all.climate.pcm.pop.ndvi.blh.era5 <- left_join(all.climate.pcm.pop.ndvi.blh, era5.df, by = c("x", "y","Time"))
+
+save(all.climate.pcm.pop.ndvi.blh.era5, file = "DATA/Data/All/A6b-All.RData")
+
+
+```
+
+
+corine 
+
+```{r corine}
+load(file = "DATA/Data/15-Corine.RData")
+
+sitedata <- cbind(st_drop_geometry(sitedata.pop.ndvi.blh.era5, xy = TRUE), st_coordinates(sitedata.pop.ndvi.blh.era5))
+names(sitedata)[names(sitedata) == c("X","Y")] <- c("x", "y")
+
+corine.r <- rast(corine, type = "xyz", crs = "EPSG:27700")
+
+sitedata.sf <- st_as_sf(sitedata, coords = c("x", "y"), crs = "EPSG:27700")
+sitedata <- cbind(sitedata, terra::extract(corine.r, sitedata.sf)[,2])
+
+names(sitedata)
+names(sitedata)[names(sitedata) == "terra::extract(corine.r, sitedata.sf)[, 2]"] <- "CODE_18"
+sitedata$CODE_18 <- as.character(sitedata$CODE_18)
+
+legend <- read_excel("Z:/home/Objective 1/Data/Corine/supporting-documents/clc_legend.xls")
+
+names(legend)[2] <- "CODE_18"
+sitedata <- left_join(sitedata, legend, by = "CODE_18")
+
+sitedata$corine <- ifelse(sitedata$LABEL1 %in% c("Agricultural areas", "Forest and semi natural areas"), "Rural",
+                         ifelse(sitedata$LABEL1 %in% c("Water bodies","Wetlands") & sitedata$Environment.Type %in% c("Sururban", "Urban Background", "Suburban Background"), "Urban", 
+                                ifelse(sitedata$LABEL1 %in% c("Water bodies","Wetlands") & sitedata$Environment.Type %in% c("Rural Background", "Rural"), "Rural", 
+                                       ifelse(sitedata$LABEL1 %in% c("Water bodies","Wetlands") & sitedata$Environment.Type %in% c("Industrial", "Urban Industrial", "Urban Traffic", "Roadside", "Kerbside"), "Industrial/Transport",
+                                              ifelse(sitedata$LABEL2 == "Urban fabric", "Urban",
+                                                     ifelse(sitedata$LABEL2 %in% c("Industrial, commercial and transport units","Mine, dump and construction sites"), "Industrial/Transport",
+                                                            ifelse(sitedata$LABEL3 == "Sport and leisure facilities", "Urban",
+                                                                   ifelse(sitedata$LABEL3 == "Green urban areas", "Urban", NA))))))))
+
+save(sitedata, file = "DATA/Data/Sitedata/A7b-Sitedata.RData")
+
+sitedata %>% count(corine)
+
+```
+
+```{r corine-all}
+load(file = "DATA/Data/All/A6b-All.RData")
+
+all <- st_drop_geometry(all.climate.pcm.pop.ndvi.blh.era5, xy = TRUE)
+
+all <- left_join(all, corine, by = c("x","y"))
+names(all)[names(all) == "corrine"] <- "corine"
+
+save(all, file = "DATA/Data/All/A7b-All.RData")
+
+all %>% count(corine)
+
+```
+
+
+AQUM
+
+```{r AQUM}
+
+load(file = "DATA/Data/14-AQUM.RData")
+
+load(file = "DATA/Data/All/A7b-All.RData")
+load(file = "DATA/Data/Sitedata/A7b-Sitedata.RData")
+
+names(AQUM.DF)[names(AQUM.DF) %in% c("PM25", "NO2")] <- c("PM25AQUM", "NO2AQUM")
+
+sitedata <- st_as_sf(sitedata, coords = c("x","y"), crs = "EPSG:27700")
+
+aqum.month <- list()
+sitedata.df <- list()
+for(i in 1:120){
+  aqum.month[[i]] <- subset(AQUM.DF, Time == i)
+  aqum.r <- rast(aqum.month[[i]], type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.month <- subset(sitedata, Time == i)
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(aqum.r, sitedata.month, exact = FALSE)) %>% select(-c("ID.1", "month.1", "Time.1", "geometry"))
+}
+
+sitedata.aqum <- do.call(rbind, sitedata.df)
+
+save(sitedata.aqum, file = "DATA/Data/Sitedata/A8b-Sitedata.RData")
+
+all.aqum <- left_join(all, AQUM.DF, by = c("x", "y","Time"))
+
+save(all.aqum, file = "DATA/Data/All/A8b-All.RData")
+
+
+
+```
+
+Rural Urban
+
+
+load(file = "DATA/Data/Sitedata/A8b-Sitedata.RData")
+load(file = "DATA/Data/All/A8b-All.RData")
+
+load("DATA/Data/10-Urban-Rural.RData")
+names(s.df)[3] <- "Urban-Rural"
+
+sitedata <- st_as_sf(sitedata.aqum, coords = c("x","y"), crs = "EPSG:27700")
+
+s.r <- rast(s.df, type = "xyz", crs = "EPSG:27700")
+  
+
+sitedata.aqum <- do.call(rbind, sitedata.df)
+
+save(sitedata.aqum, file = "DATA/Data/Sitedata/A8b-Sitedata.RData")
+
+all.aqum <- left_join(all, AQUM.DF, by = c("x", "y","Time"))
+
+save(all.aqum, file = "DATA/Data/All/A8b-All.RData")
+
+
+GHSL
+
+```{r GHSL}
+
+load(file = "DATA/Data/Sitedata/A8b-Sitedata.RData")
+load(file = "DATA/Data/All/A8b-All.RData")
+
+load("DATA/Data/11-GHSL df.RData")
+
+all.ghsl <- left_join(all.aqum, GHSL.DF, by = c("x","y")) %>% select(-c("month.x"))
+names(all.ghsl)[names(all.ghsl) %in% c("pop.x", "month.y", "pop.y")] <- c("pop","month","GHSL.pop")
+
+save(all.ghsl, file = "DATA/Data/All/A9b-All.RData")
+
+ghsl.r <- rast(GHSL.DF, type = "xyz", crs = "EPSG:27700")
+
+sitedata.sf <- st_as_sf(sitedata.aqum, coords = c("x","y"), crs = "EPSG:27700")
+
+sitedata.ghsl <- cbind(sitedata.sf, terra::extract(ghsl.r, sitedata.sf), st_coordinates(sitedata.sf))
+sitedata.ghsl <- st_drop_geometry(sitedata.ghsl) %>% select(-c("ID.1"))
+
+
+names(sitedata.ghsl)[names(sitedata.ghsl) == "pop.1"] <- "GHSL.pop"
+save(sitedata.ghsl, file = "DATA/Data/Sitedata/A9b-Sitedata.RData")
+
+```
+
+
+LAEI
+
+```{r LAEI}
+
+load(file = "DATA/Data/Sitedata/A9b-Sitedata.RData")
+load(file = "DATA/Data/All/A9b-All.RData")
+
+load("DATA/Data/16-LAEI_Filled.csv")
+
+sitedata <- st_as_sf(sitedata.ghsl, coords = c("X","Y"), crs = "EPSG:27700")
+
+laei.year <- list()
+sitedata.df <- list()
+for(i in 1:10){
+  laei.year[[i]] <- subset(LAEI, Year == i + 2009)
+  laei.r <- rast(laei.year[[i]][,c("x","y", "Year", "LAEI NO2", "LAEI PM25")], type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.year <- subset(sitedata,Year == i + 2009)
+  sitedata.df[[i]] <- cbind(sitedata.year, terra::extract(laei.r, sitedata.year, exact = FALSE)) %>% select(-c("Year.1", "ID.1"))
+}
+
+sitedata.laei <- do.call(rbind, sitedata.df)
+names(sitedata.laei)[names(sitedata.laei) == "LAEI.PM25"] <- "PM25LAEI"
+save(sitedata.laei, file = "DATA/Data/Sitedata/A10b-Sitedata.RData")
+
+names(LAEI)
+all.laei <- left_join(all.ghsl, LAEI, by = c("x", "y", "Year"))
+names(all.laei)[names(all.laei) == "LAEI PM25"] <- "PM25LAEI"
+
+
+save(all.laei, file = "DATA/Data/All/A10b-All.RData")
+
+```
+
+Road Density
+
+```{r road_dens}
+
+load(file = "DATA/Data/17-Road_Density.RData")
+
+london_rd.df[,c("x","y")] <- london_rd.df[,c("Easting","Northing")]*1000
+
+all.road <- left_join(all.laei, london_rd.df, by = c("x", "y"))
+
+save(all.road, file = "DATA/Data/All/A11-All.RData")
+
+
+road.r <- rast(london_rd.df[,c("x","y","Road_dens")], type = "xyz", crs = "EPSG:27700")
+
+sitedata.sf <- st_as_sf(sitedata.laei, coords = c("x","y"), crs = "EPSG:27700")
+
+sitedata.road <- cbind(sitedata.sf, terra::extract(road.r, sitedata.sf), st_coordinates(sitedata.sf))
+sitedata.road <- st_drop_geometry(sitedata.road) %>% select(-c("ID.1"))
+
+save(sitedata.road, file = "DATA/Data/Sitedata/A11b-Sitedata.RData")
+
+```
+
+Greenspace
+
+```{r green}
+
+load("DATA/Data/18-Greenspace.RData")
+green.grid[,c("x","y")] <- green.grid[,c("Easting","Northing")]*1000
+
+all.green <- left_join(all.road, green.grid, by = c("x", "y"))
+
+all.green <- all.green %>% select(-c("Easting.x", "Northing.x", "Easting.y", "Northing.y"))
+
+save(all.green, file = "DATA/Data/All/A12b-All.RData")
+
+
+green.r <- rast(green.grid[,c("x","y","Green_Area")], type = "xyz", crs = "EPSG:27700")
+
+sitedata.sf <- st_as_sf(sitedata.road, coords = c("X","Y"), crs = "EPSG:27700")
+
+sitedata.green <- cbind(sitedata.sf, terra::extract(green.r, sitedata.sf), st_coordinates(sitedata.sf))
+sitedata.green <- st_drop_geometry(sitedata.green) %>% select(-c("ID.1"))
+
+save(sitedata.green, file = "DATA/Data/Sitedata/A12b-Sitedata.RData")
+
+```
+
+Roads
+
+Dataframes already for sites and grid but in km
+
+```{r roads}
+
+load(file = "DATA/Data/All/A12b-All.RData")
+load(file = "DATA/Data/Sitedata/A12b-Sitedata.RData")
+
+names(sitedata.green)[names(sitedata.green) == "Site.Name"] <- "Site Name"
+
+
+load(file = "DATA/Data/19-Sitedata Dist to Road.RData")
+load(file = "DATA/Data/19-Grid Dist to Road.RData")
+
+
+summary(sites[,c("dist.to.maj", "dist.to.min", "dist.to.road")])
+summary(grids[,c("dist.to.maj", "dist.to.min", "dist.to.road")])
+
+
+grids[,c("x", "y")] <- st_coordinates(grids)*1000
+#sites[,c("X", "Y")] <- st_coordinates(sites)*1000
+
+grids <- drop_units(grids)
+sites <- drop_units(sites)
+
+ggplot() + 
+  geom_raster(grids, mapping = aes(x = x, y = y, fill = dist.to.maj))
+ggplot() + 
+  geom_raster(grids, mapping = aes(x = x, y = y, fill = dist.to.min))
+
+ggplot() + 
+  geom_raster(grids, mapping = aes(x = x, y = y, fill = dist.to.road)) + scale_fill_viridis_c(option = "B") 
+
+
+griddata <- left_join(all.green, grids, by = c("x", "y"))
+sitedata <- left_join(sitedata.green, sites, by = c("Site Name"))
+
+save(griddata, file = "DATA/Data/All/A13b-Griddata.RData")
+save(sitedata, file = "DATA/Data/Sitedata/A13b-Sitedata.RData")
+
+```
+
+
+Met Office Air Pollution
+
+```{r AQUM}
+
+load(file = "DATA/data/20-Met Office Reanalysis PM25.RData")
+load(file = "DATA/data/20-Met Office Reanalysis NO2.RData")
+
+load(file = "DATA/Data/All/A13b-Griddata.RData")
+load(file = "DATA/Data/Sitedata/A13b-Sitedata.RData")
+
+names(PM25.DF)[3] <- "PM25MO"
+names(NO2.DF)[3] <- "NO2MO"
+
+sitedata <- st_as_sf(sitedata, coords = c("X","Y"), crs = "EPSG:27700")
+
+PM25.month <- list()
+NO2.month <- list()
+sitedata.df <- list()
+for(i in 1:120){
+  PM25.month[[i]] <- subset(PM25.DF, Time == i)
+  NO2.month[[i]] <- subset(NO2.DF, Time == i)
+  
+  pm25.r <- rast(PM25.month[[i]], type = "xyz", crs = "EPSG:27700")
+  no2.r <- rast(NO2.month[[i]], type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.month <- subset(sitedata, Time == i)
+  
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(pm25.r, sitedata.month, exact = FALSE)) %>% select(-c("siteid.y", "ID.1", "month.1","Year.1", "Time.1", "geometry"))
+  
+  sitedata.df[[i]] <- cbind(sitedata.df[[i]], terra::extract(no2.r, sitedata.month, exact = FALSE)) %>% select(-c("ID.1", "month.1", "Year.1", "Time.1", "geometry"))
+}
+
+sitedata.mo <- do.call(rbind, sitedata.df)
+names(sitedata.mo)
+
+save(sitedata.mo, file = "DATA/Data/Sitedata/A14b-Sitedata.RData")
+
+all.mo <- left_join(griddata, PM25.DF[,c("x","y","Time","PM25MO")], by = c("x", "y","Time"))
+all.mo <- left_join(all.mo, NO2.DF[,c("x","y","Time","NO2MO")], by = c("x", "y","Time")) 
+
+save(all.mo, file = "DATA/Data/All/A14b-Griddata.RData")
+
+
+
+```
+
+
+
+New NDVI
+
+
+```{r NDVI}
+
+load(file = "Z:/home/DATA/Data/9-NDVI/9-NDVI.RData")
+
+load(file = "DATA/Data/All/A14b-Griddata.RData")
+load(file = "DATA/Data/Sitedata/A14b-Sitedata.RData")
+
+sitedata <- st_as_sf(sitedata.mo, coords = c("X","Y"), crs = "EPSG:27700")
+
+NDVI.df <- subset(NDVI, X >= 502000 & X <= 564000 & Y >= 154000 & Y <= 203000)
+
+x <- rep(seq(502500, 563500, 1000), 49)
+y.coords <- rep(seq(154500, 202500, 1000), 62)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+
+NDVI.month <- list()
+sitedata.df <- list()
+for(i in 1:120){
+  NDVI.month[[i]] <- subset(NDVI, Time == i)[,c("X", "Y", "NDVI", "Time")]
+
+  NDVI.r <- rast(NDVI.month[[i]], type = "xyz", crs = "EPSG:27700")
+
+  sitedata.month <- subset(sitedata.mo, Time == i)
+  
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(NDVI.r, sitedata.month, exact = FALSE)) %>% select(-c("ID.1", "Time.1", "geometry"))
+  
+  
+  
+  names(sitedata.df[[i]])[53] <- "NDVI_New"
+  
+}
+
+sitedata.ndvi <- do.call(rbind, sitedata.df)
+names(sitedata.ndvi)
+
+
+save(sitedata.ndvi, file = "DATA/Data/Sitedata/A15b-Sitedata.RData")
+
+load(file = "DATA/Data/Sitedata/A15b-Sitedata.RData")
+
+
+names(NDVI.df) <- c("x", "y", "Time","NDVI_New")
+
+all.mo <- left_join(all.mo, NDVI.df, by = c("x", "y","Time"))
+summary(all.mo$NDVI_New)
+
+
+save(all.mo, file = "DATA/Data/All/A15b-Griddata.RData")
+
+
+
+```
+
+
+
+Met Office Air Pollution
+
+```{r AQUM}
+
+load(file = "DATA/data/20-Met Office Reanalysis PM25 Cubic.RData")
+load(file = "DATA/data/20-Met Office Reanalysis NO2 Cubic.RData")
+
+
+load(file = "DATA/Data/All/A15b-Griddata.RData")
+load(file = "DATA/Data/Sitedata/A15b-Sitedata.RData")
+
+names(PM25.DF)[3] <- "PM25MO_2"
+names(NO2.DF)[3] <- "NO2MO_2"
+
+sitedata <- st_as_sf(sitedata.ndvi, coords = c("X","Y"), crs = "EPSG:27700")
+
+PM25.month <- list()
+NO2.month <- list()
+sitedata.df <- list()
+for(i in 1:120){
+  PM25.month[[i]] <- subset(PM25.DF, Time == i)
+  pm25.r <- rast(PM25.month[[i]], type = "xyz", crs = "EPSG:27700")
+  NO2.month[[i]] <- subset(NO2.DF, Time == i)
+  no2.r <- rast(NO2.month[[i]], type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.month <- subset(sitedata, Time == i)
+  
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(pm25.r, sitedata.month, exact = FALSE)) %>% select(-c("ID.1", "month.1","Year.1", "Time.1", "geometry"))
+  sitedata.df[[i]] <- cbind(sitedata.df[[i]], terra::extract(no2.r, sitedata.month, exact = FALSE)) %>% select(-c("ID.1", "month.1", "Year.1", "Time.1", "geometry"))
+  
+}
+
+sitedata.mo <- do.call(rbind, sitedata.df)
+names(sitedata.mo)
+
+save(sitedata.mo, file = "DATA/Data/Sitedata/A16b-Sitedata.RData")
+
+
+all.mo <- left_join(all.mo, PM25.DF[,c("x","y","Time","PM25MO_2")], by = c("x", "y","Time"))
+all.mo <- left_join(all.mo, NO2.DF[,c("x","y","Time","NO2MO_2")], by = c("x", "y","Time")) 
+
+save(all.mo, file = "DATA/Data/All/A16b-Griddata.RData")
+
+
+
+```
+
+
+

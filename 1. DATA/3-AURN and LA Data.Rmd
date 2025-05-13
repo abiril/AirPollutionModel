@@ -1,0 +1,159 @@
+---
+title: "3-AURN and LA Data "
+author: "Abi Riley"
+date: "2024-05-29"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+
+Load in packages and set working directory
+
+```{r packages, echo=FALSE}
+
+library(readxl)
+library(ggplot2)
+library(reshape2)
+library(scico)
+library(dplyr)
+library(tidyr)
+library(xts)
+library(sf)
+
+```
+
+Load in LA and AURN data, crop to London and fix variable names
+
+```{r data}
+
+load(file = "Z:/home/DATA/Data/1-AURN.RData")
+
+aurn.data <- All
+
+load(file = "Z:/home/DATA/Data/2-London Air.RData")
+
+la.data <- LA
+
+la.data$Network <- "London Air"
+
+```
+
+Fix some missing eastings and northing
+
+```{r east-north}
+
+sitedata.wCoords <- subset(aurn.data, !is.na(Easting) & !is.na(Northing))
+sitedata.NoCoords <- subset(aurn.data, is.na(Easting) | is.na(Northing))
+
+No.Coords.sf <- st_as_sf(sitedata.NoCoords, coords = c("Longitude","Latitude"), crs = 4326)
+No.Coords.sf <- st_transform(No.Coords.sf, crs = "EPSG:27700")
+No.Coords.Coords <- as.data.frame(st_coordinates(No.Coords.sf))
+sitedata.NoCoords$Easting <- No.Coords.Coords$X
+sitedata.NoCoords$Northing <- No.Coords.Coords$Y
+
+aurn.data <- rbind(sitedata.wCoords, sitedata.NoCoords)
+
+
+
+```
+
+```{r}
+
+aurn.data$Network <- "AURN"
+
+names(la.data) <- c("Site Name", "Year", "month", "PM25 Hourly LA", "PM25", "NO2", "Easting", "Northing", "Latitude", "Longitude", "Environment Type", "Time", "Network")
+
+aurn.data$`PM25 Hourly LA` <- NA
+
+aurn.data <- aurn.data[,c("Site Name", "Year", "month", "PM25 Hourly LA","PM25", "NO2", "Easting", "Northing", "Latitude", "Longitude", "Environment Type", "Time", "Network")]
+
+
+
+```
+
+Join data, crop and create site ID
+
+```{r join}
+
+site.data <- rbind(la.data, aurn.data)
+
+ggplot() +
+  geom_point(site.data, mapping = aes(x = Easting, y = Northing)) + #coord_equal() +
+  geom_vline(xintercept = 500500) + geom_vline(xintercept = 587500) +
+  geom_hline(yintercept = 153500) + geom_hline(yintercept = 224500)
+
+site.data <- subset(site.data, Easting <= 588000 & Easting >= 500000 & Northing <= 225000 & Northing >= 153000)
+site.data$siteid <- as.numeric(as.factor(paste(site.data$`Site Name`, site.data$Network)))
+
+
+```
+
+Create dummy variables for site types
+
+```{r site_types}
+
+site.data$rural <- ifelse(site.data$`Environment Type` == "Rural", 1, 0)
+site.data$urban <- ifelse(site.data$`Environment Type` %in% c("Urban", "Urban Industrial", "Urban Traffic"), 1, 0)
+site.data$suburban <- ifelse(site.data$`Environment Type` %in% c("Suburban", "Suburban Industrial"), 1, 0)
+site.data$industrial <- ifelse(site.data$`Environment Type` %in% c("Urban Industrial", "Suburban Industrial"), 1, 0)
+site.data$traffic <- ifelse(site.data$`Environment Type` %in% c("Kerbside", "Roadside", "Urban Traffic"), 1, 0)
+
+```
+
+Create "full dataset", i.e. values for all times at all sites
+
+```{r full}
+
+empty.sites <- unique(site.data[,c("Site Name", "Easting", "Northing", "Latitude","Longitude", "Environment Type", "Network", "siteid")])
+
+func1 <- function(a){
+  ifelse(sum(a,na.rm = TRUE) > 0, sum(a,na.rm = TRUE), NA)
+}
+
+
+site.data.part <- site.data[,c("siteid", "Time", "PM25", "PM25 Hourly LA", "NO2")]
+
+full.site.data <- tidyr::complete(site.data.part, expand(site.data, siteid, Time))
+full.site.data <- aggregate(. ~ siteid + Time, data = full.site.data, func1, na.action = na.pass)
+full.site.data <- merge(full.site.data, empty.sites, by = c("siteid"), all.x = TRUE)
+sitedata <- full.site.data
+
+save(sitedata, file = "Z:/home/DATA/Data/3-AURN and LA Data.RData")
+
+
+
+```
+
+```{r check}
+
+load(file = "Z:/home/DATA/Data/3-AURN and LA Data.RData")
+
+LA <- subset(sitedata, Network == "London Air")
+AURN <- subset(sitedata, Network == "AURN")
+
+par(mfrow = c(2,2))
+hist(LA$PM25)
+hist(LA$`PM25 Hourly LA`)
+hist(AURN$PM25)
+hist(sitedata$PM25)
+
+sitedata <- subset(sitedata, PM25 >= 0)
+sites <- unique(sitedata[,c("Site Name", "Network", "Environment Type", "Easting", "Northing")])
+sites %>% count(`Environment Type`)
+
+View(unique(sitedata[,c("Site Name", "Network", "Environment Type", "Easting", "Northing")]))
+
+LA.pm25 <- subset(LA, PM25 >=0) #35
+View(unique(LA.pm25[,c("Site Name", "Network", "Environment Type", "Easting", "Northing")]))
+
+AURN.pm25 <- subset(AURN, PM25 >=0) #17
+View(unique(AURN.pm25[,c("Site Name", "Network", "Environment Type", "Easting", "Northing")]))
+
+
+```
+
+

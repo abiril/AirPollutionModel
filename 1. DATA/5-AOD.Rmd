@@ -1,0 +1,177 @@
+---
+title: "5-AOD"
+author: "Abi Riley"
+date: "2024-05-29"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+```
+
+Packages
+
+```{r packages}
+
+library(dplyr)
+library(terra)
+library(sf)
+library(ggplot2)
+library(gstat)
+
+```
+
+Grids for GEE
+
+``` {r grid}
+
+x <- rep(seq(500500, 587500, 1000), 88)
+y.coords <- rep(seq(153500, 224500, 1000), 90)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs ="EPSG:27700")
+
+grid.df <- as.data.frame(grid, xy = TRUE)
+write.csv(grid.df, file = "DATA/Data/grid_27700.csv")
+
+grid.sf <- st_as_sf(grid.df, coords = c("x","y"), crs = "EPSG:27700")
+grid.sf <- st_transform(grid.sf, crs = 4326)
+grid.df <- cbind(st_drop_geometry(grid.sf), st_coordinates(grid.sf))
+write.csv(grid.df, file = "DATA/Data/grid_27700to4326.csv")
+
+
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+```
+
+
+Load in data
+
+```{r data}
+years <- 2010:2019
+
+#AOD2010 <- read.csv("Jobs/ST_INLA/FINAL/FINAL/NEW/Data/MonthlyAODDataGrid2010.csv")
+
+AOD <- list()
+for(i in 1:10){
+  AOD[[i]] <-  read.csv(paste("Jobs/ST_INLA/FINAL/FINAL/NEW/Data/MonthlyAODDataMedian", years[i], ".csv", sep = ""))
+  AOD[[i]]$Time <- (years[i] -2010)*12 + AOD[[i]]$month
+  #AOD[[i]] <- AOD[[i]][,c("id", "mean", "Time")]
+                       
+}
+
+AOD.df <- do.call(rbind, AOD)
+AOD.df <- AOD.df[,c(2,3,4,6)]
+names(AOD.df)[2] <- "AOD"
+save(AOD.df, file = "DATA/Data/5-AOD/MonthlyAOD.RData")
+
+
+```
+
+
+```{r load}
+
+grid <- read.csv("DATA/Data/grid_27700to4326.csv")
+
+load(file = "DATA/Data/5-AOD/MonthlyAOD.RData")
+AOD.df <- subset(AOD.df, AOD <= 1)
+
+head(AOD.df)
+
+AOD.grid <- merge(AOD.df, grid, by = "id", all = TRUE)[,-5]
+
+min(grid$id)
+hist(AOD.df$id)
+
+unique(AOD.df$id %in% grid$id)
+
+``` 
+
+Full actual grid 
+
+```{r grid}
+
+x <- rep(seq(500500, 587500, 1000), 72)
+y.coords <- rep(seq(153500, 224500, 1000), 88)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs = "EPSG:27700")
+
+xy <- terra::xyFromCell(grid, 1:ncell(grid))
+coop <- st_as_sf(as.data.frame(xy), coords = c("x", "y"),
+                 crs =  "EPSG:27700")
+
+```
+
+
+Inverse Distance Weighting Interpolation
+
+```{r IDW}
+
+AOD.df <- AOD.grid
+AOD.df$AOD100 <- AOD.df$AOD * 100
+
+AOD.df <- subset(AOD.df, !is.na(X) & !is.na(Y))
+AOD.sf <- st_as_sf(AOD.df, coords = c("X","Y"), crs = "EPSG:4326")
+AOD.sf <- st_transform(AOD.sf, crs = "EPSG:27700")
+AOD.df <- cbind(st_drop_geometry(AOD.sf), st_coordinates(AOD.sf))
+
+LIDW <- list()
+for (i in 1:120){
+  AODmonth <- subset(AOD.df, Time == i & !is.na(AOD100) & !is.na(X) & !is.na(Y))
+  AODmonth.sf <- st_as_sf(AODmonth, coords = c("X","Y"), crs = "EPSG:27700")
+  g <- gstat(formula = AOD100 ~ 1, locations = AODmonth.sf, nmax = 8, set = list(idp = 2))
+  LIDW[[i]] <- predict(g, coop)
+  LIDW[[i]]$Time <- i
+  LIDW.month <- LIDW[[i]]
+  save(LIDW.month, file = paste("DATA/Data/5-AOD/LIDW ", i, ".RData", sep = ""))
+}
+
+
+
+```
+Make dataframe
+
+```{r dataframe}
+
+LIDW.df <- cbind(st_drop_geometry(LIDW[[1]]), st_coordinates(coop))
+for (i in 2:120){
+  LIDW.df <- rbind(cbind(st_drop_geometry(LIDW[[i]]), st_coordinates(coop)), LIDW.df)
+} 
+                   
+save(LIDW.df, file  = "DATA/Data/5-AOD/LIDW df.RData")
+
+names(LIDW.df)
+LAOD <- merge(AOD.df, LIDW.df, by.x = c("X","Y","Time"), by.y = c("X","Y","Time"), all = TRUE)
+
+names(LAOD)
+names(LAOD)[c(8,9)] <- c("AOD_IDW", "AOD_IDW_Var")
+
+save(LAOD, file  = "DATA/Data/5-AOD/5-AOD.RData")
+
+
+
+
+```
+
+```{r plot}
+
+
+aod.month <- subset(LIDW.df, Time == 32)
+ggplot() +
+  geom_raster(aod.month, mapping = aes(x = X, y = Y, fill = var1.pred))
+
+
+```
+

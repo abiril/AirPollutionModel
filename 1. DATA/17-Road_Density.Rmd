@@ -1,0 +1,128 @@
+---
+title: "17-Road_Density"
+author: "Abi Riley"
+date: "2024-10-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(terra)
+library(sf)
+
+```
+
+
+Grid
+
+```{r grid}
+
+x <- rep(seq(502500, 563500, 1000), 49)
+y.coords <- rep(seq(154500, 202500, 1000), 62)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs = "EPSG:27700")
+grid_4326 <- terra::project(grid, y =  "EPSG:4326")
+
+xy <- terra::xyFromCell(grid_4326, 1:ncell(grid_4326))
+coop <- st_as_sf(as.data.frame(xy), coords = c("x", "y"),
+                 crs =  "EPSG:4326")
+
+
+```
+
+Load in Road density data
+
+```{r data}
+
+road_density <- rast("Objective 1/Data/GRIP Road Density/grip4_total_dens_m_km2.asc")
+plot(road_density)
+st_crs(road_density)
+
+```
+
+Project to EPSG:27700
+
+``` {r project}
+
+bbox <- rast(ncol=88, nrow=91, 
+             xmin=498500, xmax=589500,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+crs(road_density) <- "+proj=longlat +datum=WGS84 +no_defs"
+rd_27700 <- project(road_density, bbox)
+london_rd_27700 <- crop(rd_27700, bbox)
+
+london_rd_1km <- project(london_rd_27700, "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+
+```
+
+Make clean data frame
+
+```{r df}
+london_rd.df <- as.data.frame(london_rd_1km, xy = TRUE)
+
+names(london_rd.df) <- c("Easting", "Northing", "Road_dens")
+london_rd.df$Easting <- floor(london_rd.df$Easting) + 0.500
+london_rd.df$Northing <- floor(london_rd.df$Northing) + 0.500
+
+london_rd.df["Northing" == 179.5,"Road_dens"] <- (london_rd.df["Northing" == 178.5, "Road_dens"] + london_rd.df["Northing" == 180.5, "Road_dens"])/2
+
+Road_dens <- (subset(london_rd.df, Northing == 178.5)$Road_dens + subset(london_rd.df, Northing == 180.5)$Road_dens)/2
+Easting <- unique(london_rd.df$Easting)
+Northing <- 179.5
+
+missing.df <- cbind(Easting, Northing, Road_dens)
+london_rd.df <- rbind(london_rd.df, missing.df)
+
+save(london_rd.df, file = "DATA/Data/17-Road_Density.RData")
+```
+
+
+OSM Road Density
+
+```{r osm}
+
+load(file = "DATA/Data/17-Road_Density.RData")
+
+#major_density <- read.csv("DATA/Data/QGIS/Major_Density_Overlap.csv") 
+#primary_density <- read.csv("DATA/Data/QGIS/MotorwayPrimary_Density_Overlap.csv")
+#motorway_density <- read.csv("DATA/Data/QGIS/Motorway_Density_Overlap.csv")
+#primaryonly_density <- read.csv("DATA/Data/QGIS/PrimaryOnly_Density_Overlap.csv")
+#minor_density <- read.csv("DATA/Data/QGIS/MinorOnly_Density_Overlap.csv")
+#all_density <- read.csv("DATA/Data/QGIS/AllRoads_Density_Overlap.csv")
+
+major_density <- read.csv("DATA/Data/QGIS/Final/Major_Density.csv") 
+primary_density <- read.csv("DATA/Data/QGIS/Final/Primary_Density.csv")
+motorway_density <- read.csv("DATA/Data/QGIS/Final/Motorway_Density.csv")
+primaryonly_density <- read.csv("DATA/Data/QGIS/Final/PrimaryOnly_Density.csv")
+minor_density <- read.csv("DATA/Data/QGIS/Final/MinorOnly_Density.csv")
+all_density <- read.csv("DATA/Data/QGIS/Final/AllRoads_Density.csv")
+
+
+road_density <- cbind(major_density, primary_density$COUNT, motorway_density$COUNT, primaryonly_density$COUNT, minor_density$COUNT, all_density$COUNT)
+names(road_density)[c(10:15)] <- c("major_dens", "primary_dens", "motorway_dens", "primaryonly_dens",
+                                   "minor_dens", "all_dens")
+
+road_density$x <- road_density$left + 500
+road_density$y <- road_density$bottom + 500
+
+road_density.df <- road_density[,c("x", "y", "major_dens", "primary_dens", "motorway_dens","primaryonly_dens","minor_dens", "all_dens")]
+
+save(road_density.df, file = "DATA/Data/17b-Road_Density.RData")
+
+```

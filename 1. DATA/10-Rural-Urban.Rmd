@@ -1,0 +1,102 @@
+---
+title: "11-Rural-Urban"
+output: html_document
+date: "2024-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(terra)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(stars)
+
+```
+
+Load in output areas and London shapefiles
+
+```{r shapefiles}
+
+UK_OA <- read_sf("Z:/home/Objective 1/Data/Shapefiles/OA_2011/OA_2011_EW_BFE_V2.shp") 
+UK_OA <- st_transform(UK_OA, crs = "EPSG:27700")
+
+
+TTW <- read_sf("Z:/home/Jobs/ST_INLA/Shapefiles/Travel_to_Work_Areas_(Dec_2011)_FEB_in_United_Kingdom.shp")
+TTW <- st_transform(TTW, crs = "EPSG:27700" )
+TTW <- subset(TTW, OBJECTID == 92 | OBJECTID == 122)
+
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+
+```
+
+Read in data, merge to shapefile by Output Area and make sf
+
+```{r data}
+
+RUC <- read.csv("Z:/home/Objective 1/Data/Rural-Urban OAs/RUC11_OA11_EW.csv")
+
+UK_RUC <- merge(UK_OA, RUC, by.x = "OA11CD", by.y = "OA11CD")
+UK_RUC <- st_as_sf(UK_RUC, crs = "EPSG:27700")
+
+
+```
+
+Crop to London
+
+```{r crop}
+
+L_RUC <- st_crop(UK_RUC, bbox)
+L_RUC <- st_as_sf(L_RUC, crs = "EPSG:27700")
+
+names(L_RUC)
+
+
+```
+
+Make London grid
+
+```{r grid}
+x <- rep(seq(500500, 587500, 1000), 88)
+y.coords <- rep(seq(153500, 224500, 1000), 90)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs ="EPSG:27700")
+
+grid$RUC11CD <- NA
+grd <- st_as_stars(grid)
+
+```
+
+Rasterise to grid
+
+```{r rasterise}
+RUC11 <- L_RUC[,"RUC11CD"]
+
+RUC11$RUC11CD <- as.factor(RUC11$RUC11CD)
+s <- st_rasterize(RUC11, grd) 
+plot(s)
+
+s <- st_transform(s, crs = "EPSG:27700")
+s.df <- as.data.frame(s, xy = TRUE)
+
+save(s.df, file = "DATA/Data/10-Urban-Rural.RData")
+
+```

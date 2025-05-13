@@ -1,0 +1,305 @@
+---
+title: "All and Sat - No Fill"
+author: "Abi Riley"
+date: "2024-08-12"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+```
+
+Packages
+
+```{r packages}
+
+library(dplyr)
+library(terra)
+library(sf)
+library(ggplot2)
+library(gstat)
+library(readxl)
+
+```
+
+``` {r grid}
+
+x <- rep(seq(500500, 587500, 1000), 88)
+y.coords <- rep(seq(153500, 224500, 1000), 90)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs ="EPSG:27700")
+
+grid.df <- as.data.frame(grid, xy = TRUE)
+#write.csv(grid.df, file = "DATA/Data/grid_27700.csv")
+
+grid.sf <- st_as_sf(grid.df, coords = c("x","y"), crs = "EPSG:27700")
+grid.sf <- st_transform(grid.sf, crs = 4326)
+grid.df <- cbind(st_drop_geometry(grid.sf), st_coordinates(grid.sf))
+write.csv(grid.df, file = "DATA/Data/grid_27700to4326.csv")
+
+
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+grid <- read.csv("DATA/Data/grid_27700to4326.csv")
+
+
+```
+
+
+Load in AOD
+
+```{r data}
+years <- 2010:2019
+
+AOD <- list()
+for(i in 1:10){
+  
+  AOD[[i]] <-  read.csv(paste("Jobs/ST_INLA/FINAL/FINAL/NEW/Data/MonthlyAODDataMedian", years[i], ".csv", sep = ""))
+  AOD[[i]]$Time <- (years[i] -2010)*12 + AOD[[i]]$month
+                       
+}
+
+AOD.df <- do.call(rbind, AOD)
+AOD.df <- AOD.df[,c(2,3,4,6)]
+names(AOD.df)[2] <- "AOD"
+save(AOD.df, file = "DATA/Data/B-AOD.RData")
+
+
+```
+
+AOD IDW 
+
+```{r aod}
+
+load(file = "DATA/Data/B-AOD.RData")
+
+AOD.df <- merge(AOD.df, grid, by = "id", all = TRUE)[,-5]
+
+AOD.df$AOD100 <- AOD.df$AOD * 100
+
+AOD.df <- subset(AOD.df, !is.na(X) & !is.na(Y) & AOD <= 1)
+AOD.sf <- st_as_sf(AOD.df, coords = c("X","Y"), crs = "EPSG:4326")
+AOD.sf <- st_transform(AOD.sf, crs = "EPSG:27700")
+AOD.df <- cbind(st_drop_geometry(AOD.sf), st_coordinates(AOD.sf))
+
+
+AOD.london <- subset(AOD.df, X >= 502500 & X <= 563500 
+                     & Y >= 154500 & Y <= 202500)
+
+length(unique(AOD.london$id)) * 120
+
+abs((502500 - 563500)/1000)
+abs((154500 - 202500)/1000)
+
+61*48
+
+1  - nrow(AOD.london)/(length(unique(AOD.london$id)) * 120)  # availablity
+
+1  - nrow(AOD.london)/(2928 * 120)  # availablity
+
+AOD.london$X <- round(AOD.london$X)
+AOD.london$Y <- round(AOD.london$Y)
+
+AOD.month <- subset(AOD.london, Time == 45)
+
+ggplot() + 
+  geom_raster(AOD.london, mapping = aes(x = X, y = Y, fill = AOD100)) +
+  scale_fill_viridis_c(option = "C") +
+  facet_wrap(vars(Time), ncol = 12, nrow = 10) +
+  theme_void() 
+
+#############
+
+AOD.df$X <- round(AOD.df$X)
+AOD.df$Y <- round(AOD.df$Y)
+
+ggplot() + 
+  geom_raster(AOD.df, mapping = aes(x = X, y = Y, fill = AOD100)) +
+  scale_fill_viridis_c(option = "C") +
+  facet_wrap(vars(Time), ncol = 12, nrow = 10) +
+  theme_void() 
+
+```
+
+Data
+
+
+```{r data}
+
+load(file = "DATA/Data/Sitedata/A16b-Sitedata.RData")
+
+sitedata.sf <- st_as_sf(sitedata.mo, coords = c("X","Y"), crs = "EPSG:27700")
+
+load(file = "DATA/Data/All/A16b-Griddata.RData")
+
+all.sf <- st_as_sf(all.mo, coords = c("x","y"), crs = "EPSG:27700")
+
+```
+
+Inverse Diastance Weighting
+
+```{r IDW}
+
+LIDW <- list()
+LIDW.grid <- list()
+sitedata.df <- list()
+for (i in 1:120){
+  AODmonth <- subset(AOD.df, Time == i & !is.na(AOD100))
+  AODmonth.sf <- st_as_sf(AODmonth, coords = c("X","Y"), crs = "EPSG:27700")
+
+  g <- gstat(formula = AOD100 ~ 1, data = AODmonth.sf, nmax = 8, set = list(idp = 2))
+  
+  all.month <- subset(all.sf, Time == i)
+
+  LIDW.grid[[i]] <- cbind(st_drop_geometry(all.month), predict(g, all.month)[,1])
+  LIDW.grid[[i]]$Time <- i
+  names(LIDW.grid[[i]])[names(LIDW.grid[[i]]) == "var1.pred"] <- "AOD_IDW"
+  
+  sitedata.month <- subset(sitedata.sf, Time == i)
+  
+  LIDW.df <- cbind(st_coordinates(LIDW.grid[[i]]$geometry), st_drop_geometry(LIDW.grid[[i]])) %>% select(-c("geometry"))
+  LIDW.r <- rast(LIDW.df[,c("X","Y","AOD_IDW")], type = "xyz", crs = "EPSG:27700")
+   
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(LIDW.r, sitedata.month))
+  names(sitedata.df[[i]])
+  
+}
+
+sitedata.aod <- do.call(rbind, sitedata.df)
+sitedata.aod <- cbind(st_drop_geometry(sitedata.aod), st_coordinates(sitedata.aod)) %>% select(-c("ID.1"))
+
+cor(sitedata.aod[,c("PM25","AOD_IDW")], use = "pairwise.complete.obs")
+
+save(sitedata.aod, file = "DATA/Data/Sitedata/B17-Sitedata_AOD.RData")
+
+AOD.month <- cbind(LIDW.grid[[1]], st_coordinates(LIDW.grid[[1]]$geometry))
+ggplot() + geom_raster(AOD.month, mapping = aes(x = X, y = Y, fill = AOD_IDW))
+
+all.aod <- do.call(rbind, LIDW.grid)
+
+save(all.aod, file = "DATA/Data/All/B17-All_AOD.RData")
+
+
+```
+
+
+
+TNO2
+
+
+```{r join_tno2}
+load(file = "DATA/Data/All/B17-All_AOD.RData")
+
+load(file = "DATA/Data/Sitedata/B17-Sitedata_AOD.RData")
+
+TRNO2 <- c(lapply(Sys.glob("Objective 1/Data/Satellite NO2/OMI_trno2_0.10x0.10*_Col3_V4.tif"), terra::rast))
+
+grid <- terra::rast(empty, type = "xyz", crs ="EPSG:27700")
+
+Wards <- read_sf("Jobs/ST_INLA/Shapefiles/London_Ward.shp")
+London.4326 <- st_transform(Wards, crs = "EPSG:4326")
+st_bbox(London.4326)
+
+extent.4326 <- ext(-1, 1, 51, 52)
+
+all.sf <- st_as_sf(all.aod)
+
+LIDW <- list()
+LIDW.grid <- list()
+sitedata.df <- list()
+for (i in 1:120){
+  TNO2 <- crop(TRNO2[[i + 60]], extent.4326)
+  TNO2 <- terra::project(TNO2, y = "EPSG:27700")
+  TNO2.df <- as.data.frame(TNO2, xy = TRUE)
+  names(TNO2.df)[3] <- "TNO2"
+  
+  TNO2month <- subset(TNO2.df, !is.na(TNO2))
+  TNO2month$TNO2100 <- TNO2month$TNO2*0.00000000000001
+  
+  TNO2month.sf <- st_as_sf(TNO2month, coords = c("x","y"), crs = "EPSG:27700")
+  
+  g <- gstat(formula = TNO2100 ~ 1, locations = TNO2month.sf, nmax = 8, set = list(idp = 2))
+  
+  all.month <- subset(all.sf, Time == i)
+
+  LIDW.grid[[i]] <- cbind(st_drop_geometry(all.month), predict(g, all.month)[,1])
+  LIDW.grid[[i]]$Time <- i
+  names(LIDW.grid[[i]])[names(LIDW.grid[[i]]) == "var1.pred"] <- "TNO2_IDW"
+  
+  sitedata.month <- st_as_sf(subset(sitedata.aod, Time == i), coords = c("X","Y"), crs = "EPSG:27700")
+  
+  LIDW.df <- cbind(st_coordinates(LIDW.grid[[i]]$geometry), st_drop_geometry(LIDW.grid[[i]])) %>% select(-c("geometry"))
+  
+  LIDW.r <- rast(LIDW.df[,c("X","Y","TNO2_IDW")], type = "xyz", crs = "EPSG:27700")
+   
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(LIDW.r, sitedata.month)) %>% select(-c("ID.1", "geometry"))
+  
+}
+
+sitedata.aod.tno2 <- do.call(rbind, sitedata.df)
+
+sitedata.aod.tno2 <- cbind(st_drop_geometry(sitedata.aod.tno2), st_coordinates(sitedata.aod.tno2))
+
+cor(sitedata.aod.tno2[,c("NO2","TNO2_IDW")], use = "pairwise.complete.obs")
+
+save(sitedata.aod.tno2, file = "DATA/Data/Sitedata/B17-Sitedata_AOD_TNO2.RData")
+
+TNO2.month <- cbind(LIDW.grid[[90]], st_coordinates(LIDW.grid[[90]]$geometry))
+ggplot() + geom_raster(TNO2.month, mapping = aes(x = X, y = Y, fill = TNO2_IDW))
+
+all.aod.tno2 <- do.call(rbind, LIDW.grid)
+
+save(all.aod.tno2, file = "DATA/Data/All/B17-All_AOD_TNO2.RData")
+
+
+```
+
+Adding PM25Sat
+
+```{r pm25sat}
+
+load(file = "DATA/Data/14-PM25Sat.RData")
+
+load(file = "DATA/Data/All/B17-All_AOD_TNO2.RData")
+load(file = "DATA/Data/Sitedata/B17-Sitedata_AOD_TNO2.RData")
+
+sitedata <- st_as_sf(sitedata.aod.tno2, coords = c("X","Y"), crs = "EPSG:27700")
+
+pm25sat.month <- list()
+sitedata.df <- list()
+for(i in 1:120){
+  pm25sat.month[[i]] <- subset(PM25Sat.df, Time == i)
+  pm25sat.r <- rast(pm25sat.month[[i]], type = "xyz", crs = "EPSG:27700")
+  
+  sitedata.month <- subset(sitedata, Time == i)
+  sitedata.df[[i]] <- cbind(sitedata.month, terra::extract(pm25sat.r, sitedata.month, exact = FALSE)) %>% select(-c("ID.1", "Time.1", "geometry"))
+}
+
+sitedata.pm25sat <- do.call(rbind, sitedata.df)
+
+save(sitedata.pm25sat, file = "DATA/Data/Sitedata/B17-Sitedata_AOD_TNO2_PM25Sat.RData")
+
+all.aod.tno2[,c("x", "y")] <- st_coordinates(all.aod.tno2$geometry)
+
+all.pm25sat <- left_join(all.aod.tno2, PM25Sat.df, by = c("x", "y","Time"))
+
+save(all.pm25sat, file = "DATA/Data/All/B17-All_AOD_TNO2_PM25Sat.RData")
+
+summary(all.pm25sat$NDVI_New)
+
+
+```
+
+
+
+```
+

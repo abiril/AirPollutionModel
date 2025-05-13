@@ -1,0 +1,133 @@
+---
+title: "15-Corine"
+author: "Abi Riley"
+date: "2024-10-29"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(terra)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(sf)
+
+```
+
+Read in data
+
+```{r data}
+
+corine <- read_sf("Z:/home/Objective 1/Data/Corine/data/clc2018_uk.shp")
+
+legend <- read_excel("Z:/home/Objective 1/Data/Corine/supporting-documents/clc_legend.xls")
+
+```
+
+
+Project
+
+``` {r crop}
+
+TTW <- read_sf("Z:/home/Jobs/ST_INLA/Shapefiles/Travel_to_Work_Areas_(Dec_2011)_FEB_in_United_Kingdom.shp")
+London2 <- subset(TTW, OBJECTID == 92 | OBJECTID == 122)
+London2 <- st_transform(London2, crs = "EPSG:27700" )
+
+corine <- st_transform(corine, crs = "EPSG:27700")
+
+```
+
+Rasterise
+
+``` {r rasterize}
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+
+st_bbox(corine)
+
+names(corine)
+
+corine.r <- rast(corine, resolution = 1000)
+corine.z <- rasterize(corine, corine.r, field = "CODE_18")
+corine.london <- project(corine.z, bbox)
+corine.df <- as.data.frame(corine.london, xy = TRUE)
+
+
+plot(corine.london)
+
+```
+
+
+
+Merge with legend and make categories
+
+```{r merge}
+
+names(legend)[2] <- "CODE_18"
+corine <- left_join(corine.df, legend, by = "CODE_18")
+
+View(unique(corine[,c("LABEL1","LABEL2","LABEL3")]))
+
+corine$corrine <- ifelse(corine$LABEL1 %in% c("Agricultural areas", "Forest and semi natural areas"), "Rural",
+                         ifelse(corine$LABEL1 %in% c("Water bodies","Wetlands"), "Water/Wetlands",
+                                ifelse(corine$LABEL2 == "Urban fabric", "Urban",
+                                       ifelse(corine$LABEL2 %in% c("Industrial, commercial and transport units","Mine, dump and construction sites"), "Industrial/Transport", 
+                                              ifelse(corine$LABEL3 == "Sport and leisure facilities", "Suburban", 
+                                                     ifelse(corine$LABEL3 == "Green urban areas", "Urban", NA))))))
+
+
+corine$corrine <- ifelse(corine$LABEL1 %in% c("Agricultural areas", "Forest and semi natural areas"), "Rural",
+                         ifelse(corine$LABEL1 %in% c("Water bodies","Wetlands"), "Rural",
+                                ifelse(corine$LABEL2 == "Urban fabric", "Urban",
+                                       ifelse(corine$LABEL2 %in% c("Industrial, commercial and transport units","Mine, dump and construction sites"), "Industrial/Transport", 
+                                              ifelse(corine$LABEL3 == "Sport and leisure facilities", "Urban", 
+                                                     ifelse(corine$LABEL3 == "Green urban areas", "Urban", NA))))))
+
+ggplot() + 
+  geom_raster(corine, mapping = aes(x = x, y = y, fill = corrine))
+
+```
+
+
+LABEL1: Agricultural areas -> Rural
+
+LABEL1: Artificial surfaces -
+          - Urban fabric (Discontinuous and continuous urban fabric) -> Urban
+          
+          - Artificial, non-agricultural vegetated areas (Sport and leisure facilities) -> Suburban
+          - Artificial, non-agricultural vegetated areas (Green urban areas) -> Urban
+          
+          - Industrial, commercial and transport units (Industrial or commercial units) -> Industrial/Transport
+          - Industrial, commercial and transport units (Road and rail networks and associated land) -> Industrial/Transport
+          - Industrial, commercial and transport units (Airports) -> Industrial/Transport
+          - Industrial, commercial and transport units (Port areas) -> Industrial/Transport
+          - Mine, dump and construction sites (Mineral extraction sites) -> Industrial/Transport
+          - Mine, dump and construction sites (Construction sites) -> Industrial/Transport
+          - Mine, dump and construction sites (Dump sites) -> Industrial/Transport
+          
+LABEL1: Forest and semi natural areas -> Rural
+LABEL1: Water bodies -> Water/Wetlands
+LABEL1: Wetlands -> Water/Wetlands
+
+         
+
+```{r save}
+
+
+save(corine, file = "DATA/Data/15-Corine.RData")
+
+
+```

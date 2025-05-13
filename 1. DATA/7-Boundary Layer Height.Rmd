@@ -1,0 +1,67 @@
+---
+title: "8-Boundary Layer Height"
+output: html_document
+date: "2024-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ncdf4)
+library(terra)
+library(readxl)
+library(ggplot2)
+#library(reshape2)
+#library(scico)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(DescTools)
+
+```
+
+Load in data
+
+```{r data}
+
+blh.nc <- rast("Objective 1/Data/PBLH/adaptor.mars.internal-1656085299.940306-7998-8-a3ebb1ad-1c63-4cb6-b166-8a88859af47e.nc")
+
+```
+
+Project, crop and create a dataframe for BLH.
+
+```{r loop}
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+
+blh.nc <- project(blh.nc, bbox)
+LBLH <- crop(blh.nc, bbox)
+LBLH.df <- as.data.frame(LBLH, xy = TRUE)
+
+```
+
+Convert wide to long and save DF
+
+```{r df}
+
+LBLH.DF <- pivot_longer(LBLH.df, cols = !c("x", "y"), names_to = "Time", values_to = "BLH")
+
+head(LBLH.DF)
+
+LBLH.DF$Time <- as.numeric(unlist(strsplit(LBLH.DF$Time, split='_', fixed=TRUE))[c(FALSE, TRUE)])
+unique(LBLH.DF$Time)
+
+save(LBLH.DF, file = "Z:/home/DATA/Data/7-BLH.RData")
+
+
+```

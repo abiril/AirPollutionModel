@@ -1,0 +1,150 @@
+---
+title: "7-NO2 OMI"
+output: html_document
+date: "2024-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ncdf4)
+library(terra)
+library(readxl)
+library(ggplot2)
+#library(reshape2)
+#library(scico)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(DescTools)
+
+```
+
+Set bbox
+
+```{r box}
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+x <- rep(seq(500500, 587500, 1000), 88)
+y.coords <- rep(seq(153500, 224500, 1000), 90)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs = "EPSG:27700")
+
+xy <- terra::xyFromCell(grid, 1:ncell(grid))
+coop <- st_as_sf(as.data.frame(xy), coords = c("x", "y"),
+                 crs =  "EPSG:27700")
+
+
+```
+
+
+Load in data
+
+```{r data}
+
+TRNO2 <- c(lapply(Sys.glob("Objective 1/Data/Satellite NO2/OMI_trno2_0.10x0.10*_Col3_V4.tif"), terra::rast))
+
+```
+
+Loop to project, crop and create a dataframe for AOD.
+
+```{r loop}
+
+LTRNO2 <- list()
+LTRNO2.df <- list()
+LTRNO2.DF <- data.frame(matrix(ncol = 4, nrow = 0))
+x <- c("x", "y", "Trop NO2", "Time")
+colnames(LTRNO2.DF) <- x
+
+for (i in 1:192){
+  crs(TRNO2[[i]]) <- "+proj=longlat +datum=WGS84 +no_defs"
+  TRNO2[[i]] <- project(TRNO2[[i]], bbox)
+  LTRNO2[[i]] <- crop(TRNO2[[i]], bbox)
+  LTRNO2.df[[i]] <- as.data.frame(LTRNO2[[i]], xy = TRUE)
+  LTRNO2.df[[i]]$Time <- rep(i, nrow(LTRNO2.df[[i]]))
+  names(LTRNO2.df[[i]])[3] <- "Trop NO2"
+  LTRNO2.DF <- rbind(LTRNO2.DF, LTRNO2.df[[i]])
+}
+
+
+save(LTRNO2.DF, file = "Z:/home/DATA/Data/6-NO2 OMI.RData")
+
+
+```
+
+
+Make LTNO2 a sf object and cut to 2010-2019
+
+```{r object}
+LTRNO2.df <- subset(LTRNO2.DF, Time >= 61 & Time <= 180)
+LTRNO2.df$Time <- LTRNO2.df$Time - 60
+
+LTRNO2.sf <- st_as_sf(LTRNO2.df, coords = c("x","y"), crs ="EPSG:27700")
+
+```
+
+Loop:
+1. Subset into one month
+2. Create sf
+3. Fit gstat
+4. Predict using IDW
+5. Save month
+
+```{r loop, echo = FALSE}
+hist(LTRNO2.df$`Trop NO2`)
+
+LTRNO2.df$TNO2.scaled <- LTRNO2.df$`Trop NO2`/100000000000000
+
+LIDW <- list()
+for (i in 1:120) {
+  LTRNO2month <- subset(LTRNO2.df, Time == i & !is.na(TNO2.scaled))
+  LTRNO2month.sf <- st_as_sf(LTRNO2month, coords = c("x","y"), crs ="EPSG:27700")
+  
+  g <- gstat(formula = TNO2.scaled ~ 1, locations = LTRNO2month.sf, nmax = 8, set = list(idp = 2))
+  LIDW[[i]] <- predict(g, coop)
+  LIDW[[i]]$Time <- i
+  LIDW.month <- LIDW[[i]]
+  save(LIDW.month, file = paste("Z:/home/DATA/Data/6-NO2 OMI/TNO2 nmax8 ", i, ".RData", sep = ""))
+}
+
+
+
+```
+
+Make dataframe
+
+```{r dataframe}
+
+LIDW.df <- cbind(st_drop_geometry(LIDW[[1]]), st_coordinates(coop))
+for (i in 2:120){
+  LIDW.df <- rbind(cbind(st_drop_geometry(LIDW[[i]]), st_coordinates(coop)), LIDW.df)
+} 
+                   
+save(LIDW.df, file  = "DATA/Data/6-NO2 OMI/LIDW df.RData")
+
+names(LIDW.df)
+LAOD <- merge(AOD.df, LIDW.df, by.x = c("X","Y","Time"), by.y = c("X","Y","Time"), all = TRUE)
+
+names(LAOD)
+names(LAOD)[c(8,9)] <- c("AOD_IDW", "AOD_IDW_Var")
+
+save(LAOD, file  = "DATA/Data/6-NO2 OMI/6-NO2 OMI.RData")
+
+
+
+
+```

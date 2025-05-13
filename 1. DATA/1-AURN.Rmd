@@ -1,0 +1,130 @@
+---
+title: "1-AURN Redownload"
+author: "Abi Riley"
+date: "2024-05-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+```
+
+## Processing AURN monitoring site data
+
+Load in packages
+
+```{r packages, echo=FALSE}
+
+library(readxl)
+library(ggplot2)
+library(reshape2)
+library(scico)
+library(dplyr)
+library(tidyr)
+library(xts)
+library(rquery)
+
+```
+
+
+## Load in data
+
+Loading in monitoring site monthly means and monitoring site information
+
+```{r data}
+
+NO2 <- read.csv("Jobs/ST_INLA/FINAL/FINAL/Full Data Processing/New Datasets/Data/AURN_NO2.csv", header = FALSE)
+
+PM25 <- read.csv("Jobs/ST_INLA/FINAL/FINAL/Full Data Processing/New Datasets/Data/AURN_PM25.csv", header = FALSE)
+
+AURNSites <- read_excel("Objective 1/Data/AURN Monitoring Sites/All AURN MS.xlsx")
+
+```
+
+# Remove unwanted info
+
+```{r data2}
+no2.names <- NO2[5,]
+NO2 <- NO2[-c(1:5),]
+names(NO2) <- no2.names
+NO2 <- subset(NO2, Units == "ugm-3")
+
+pm25.names <- PM25[5,]
+PM25 <- PM25[-c(1:5),]
+names(PM25) <- pm25.names
+PM25 <- subset(PM25, Units == "ugm-3")
+
+
+```
+
+
+Set variable name and make as long dataframes
+
+```{r make_long}
+NO2 <- NO2 %>%
+  pivot_longer(!`Site Name`:Year, names_to = "Month", values_to = "Monthly Mean")
+PM25 <- PM25 %>%
+  pivot_longer(!`Site Name`:Year, names_to = "Month", values_to = "Monthly Mean")
+
+NO2 <- subset(NO2, Month != "Units")
+PM25 <- subset(PM25, Month != "Units")
+
+names(NO2)[10] <- "NO2"
+names(PM25)[10] <- "PM25"
+
+
+```
+
+Merge PM$_{2.5}$ and NO$_2$ dataframes
+
+```{r merge}
+
+All <- natural_join(NO2, PM25, by =  c("Year","Month", "Site Name"), jointype = "FULL")
+
+All$Latitude <- as.numeric(All$Latitude)
+All$Longitude <- as.numeric(All$Longitude)
+
+All$NO2 <- as.numeric(All$NO2)
+All$PM25 <- as.numeric(All$PM25)
+
+```
+
+Merge with monitoring site data
+
+```{r add_info}
+
+All <- natural_join(All, AURNSites, by = "Site Name", jointype = "LEFT")
+
+```
+
+Make time variables
+
+```{r dates}
+
+All$month <- as.numeric(factor(All$Month, levels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")))
+
+All$Year <- as.numeric(All$Year)
+
+All$Time <- (All$Year - 2010)*12 + All$month
+
+```
+
+Make environment type varaibles for industrial and traffic
+
+```{r env_type}
+
+All$industrial <- ifelse(grepl("Industrial", All$`Environment Type`, fixed = TRUE), 1, 0)
+All$traffic <- ifelse(grepl("Traffic", All$`Environment Type`, fixed = TRUE), 1, 0)
+
+```
+
+Order by time and site and save dataframe
+
+```{r save}
+All <- All[order(All$Time),]
+All <- All[order(All$`Site Name`),]
+
+save(All, file = "Z:/home/DATA/Data/1-AURN.RData")
+
+```

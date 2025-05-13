@@ -1,0 +1,236 @@
+---
+title: "4-Climate"
+output: html_document
+date: "2024-04-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ncdf4)
+library(terra)
+library(readxl)
+library(ggplot2)
+#library(reshape2)
+#library(scico)
+library(dplyr)
+library(tidyr)
+library(sf)
+
+```
+
+## Read in data
+
+```{r data}
+tempnc <- lapply(Sys.glob("Objective 1/Data/Climate/Temperature/tas_hadukgrid_uk_1km_mon_*.nc"), nc_open)
+precipnc <- lapply(Sys.glob("Objective 1/Data/Climate/Rainfall/rainfall_hadukgrid_uk_1km_mon_*.nc"), nc_open)
+humidnc <- lapply(Sys.glob("Objective 1/Data/Climate/Humidity/hurs_hadukgrid_uk_1km_mon_*.nc"), nc_open)
+maxtempnc <- lapply(Sys.glob("Objective 1/Data/Climate/Maximum Temp/tasmax_hadukgrid_uk_1km_mon_*.nc"), nc_open)
+pressnc <- lapply(Sys.glob("Objective 1/Data/Climate/Pressure/psl_hadukgrid_uk_1km_mon_*.nc"), nc_open)
+
+```
+
+Empty lists
+
+```{r empty_lists}
+
+temp <- list()
+precip <- list()
+humid <- list()
+maxtemp <- list()
+press <- list()
+
+
+lat <- list()
+long <- list()
+
+temp.r <- list()
+precip.r <- list()
+humid.r <- list()
+maxtemp.r <- list()
+press.r <- list()
+
+temp.df <- list()
+humid.df <- list()
+precip.df <- list()
+maxtemp.df <- list()
+press.df <- list()
+
+temp.DF <- list()
+humid.DF <- list()
+precip.DF <- list()
+maxtemp.DF <- list()
+press.DF <- list()
+
+met.r <- list()
+
+```
+
+Get coordinates 
+
+```{r}
+
+lat <- append(tempnc[[1]][["var"]][["latitude"]][["dim"]][[1]][["vals"]],tempnc[[1]][["var"]][["latitude"]][["dim"]][[2]][["vals"]])
+long <- append(tempnc[[1]][["var"]][["longitude"]][["dim"]][[1]][["vals"]],tempnc[[1]][["var"]][["longitude"]][["dim"]][[2]][["vals"]])
+
+```
+
+
+Try one
+
+```{r}
+
+haduk <- st_read("Objective 1/Data/Shapefiles/HAD UK Grid SF/ukcp18-uk-land-1km.shp", crs = "EPSG:27700")
+
+st_crs(haduk)
+#plot(haduk)
+head(haduk)
+min(haduk$centroid_x)
+max(haduk$centroid_x)
+min(haduk$centroid_y)
+max(haduk$centroid_y)
+
+temp[[1]] <- ncvar_get(tempnc[[1]], "tas")
+temp.month <- temp[[1]][, , 1] 
+
+humid[[1]] <- ncvar_get(humidnc[[1]], "hurs")
+
+rotate <- function(x) t(apply(x, 2, rev))
+temp.month <- rotate(rotate(rotate(temp.month)))
+
+temp.r[[1]] <- rast(temp.month, crs = "EPSG:27700")
+plot(temp.r[[1]])
+
+temp.r.trans <- project(temp.r[[1]], "EPSG:27700")
+plot(temp.r.trans)
+
+temp_df <- as.data.frame(temp.r[[1]], xy = TRUE)
+temp_df <- as.data.frame(temp.r.trans, xy = TRUE)
+
+
+'ggplot() + 
+  geom_raster(data = LTemp, aes(x = x, y = y, fill = lyr.1, alpha = 0.9)) + 
+  scale_fill_gradient2(low = "blue", mid = "purple", high = "red", midpoint = 5.3, na.value="white") +
+  coord_equal() +
+  theme_void()'
+
+```
+
+
+```{r process, echo = FALSE}
+
+rotate <- function(x) t(apply(x, 2, rev))
+
+for (i in 1:16) {
+  temp[[i]] <- ncvar_get(tempnc[[i]], "tas")
+  precip[[i]] <- ncvar_get(precipnc[[i]], "rainfall")
+  humid[[i]] <- ncvar_get(humidnc[[i]], "hurs")
+  maxtemp[[i]] <- ncvar_get(maxtempnc[[i]], "tasmax")
+  press[[i]] <- ncvar_get(pressnc[[i]], "psl")
+  
+  for (j in 1:12) {
+    temp.month <- temp[[i]][, , j] 
+    temp.r[[j]] <- rast(rotate(rotate(rotate(temp.month))), crs="EPSG:27700")
+    
+    precip.month <- precip[[i]][, , j] 
+    precip.r[[j]] <- rast(rotate(rotate(rotate(precip.month))), crs="EPSG:27700")
+    
+    humid.month <- humid[[i]][, , j] 
+    humid.r[[j]] <- rast(rotate(rotate(rotate(humid.month))), crs="EPSG:27700")
+    
+    maxtemp.month <- maxtemp[[i]][, , j] 
+    maxtemp.r[[j]] <- rast(rotate(rotate(rotate(maxtemp.month))), crs="EPSG:27700")
+    
+    press.month <- press[[i]][, , j] 
+    press.r[[j]] <- rast(rotate(rotate(rotate(press.month))), crs="EPSG:27700")
+    
+    month <- j
+    
+    temp.df[[j]] <- cbind(month, as.data.frame(temp.r[[j]], xy = TRUE))
+    humid.df[[j]] <- cbind(month, as.data.frame(humid.r[[j]], xy = TRUE))
+    precip.df[[j]] <- cbind(month, as.data.frame(precip.r[[j]], xy = TRUE))
+    maxtemp.df[[j]] <- cbind(month, as.data.frame(maxtemp.r[[j]], xy = TRUE))
+    press.df[[j]] <- cbind(month, as.data.frame(press.r[[j]], xy = TRUE))
+
+  }
+  
+  Year <- i + 2004
+  
+  temp.DF[[i]] <- cbind(Year, do.call(rbind, temp.df))
+  humid.DF[[i]] <- cbind(Year, do.call(rbind, humid.df))
+  precip.DF[[i]] <- cbind(Year, do.call(rbind, precip.df))
+  maxtemp.DF[[i]] <- cbind(Year, do.call(rbind, maxtemp.df))
+  press.DF[[i]] <- cbind(Year, do.call(rbind, press.df))
+
+  
+}
+
+
+Temp <- do.call(rbind, temp.DF)
+Humid <- do.call(rbind, humid.DF)
+Precip <- do.call(rbind, precip.DF)
+Maxtemp <- do.call(rbind, maxtemp.DF)
+Press <- do.call(rbind, press.DF)
+
+
+
+```
+
+Or for London
+
+```{r London}
+
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+
+TTW <- read_sf("Jobs/ST_INLA/Shapefiles/Travel_to_Work_Areas_(Dec_2011)_FEB_in_United_Kingdom.shp")
+London <- subset(TTW, OBJECTID == 92)
+London <- st_transform(London, crs = "EPSG:27700")
+
+Temp$y <- (Temp$y * 1000) - 200000
+Temp$x <- (Temp$x * 1000) - 200000
+LTemp <- subset(Temp, x >= 500000 & x <= 588000 & y >= 135000 & y <= 225000)
+save(LTemp, file = "Z:/home/DATA/Data/Temp.RData")
+
+Humid$y <- (Humid$y * 1000) - 200000
+Humid$x <- (Humid$x * 1000) - 200000
+LHumid <- subset(Humid, x >= 500000 & x <= 588000 & y >= 135000 & y <= 225000)
+save(LHumid, file = "Z:/home/DATA/Data/Humid.RData")
+
+Precip$y <- (Precip$y * 1000) - 200000
+Precip$x <- (Precip$x * 1000) - 200000
+LPrecip <- subset(Precip, x >= 500000 & x <= 588000 & y >= 135000 & y <= 225000)
+save(LPrecip, file = "Z:/home/DATA/Data/Precip.RData")
+
+Maxtemp$y <- (Maxtemp$y * 1000) - 200000
+Maxtemp$x <- (Maxtemp$x * 1000) - 200000
+LMaxtemp <- subset(Maxtemp, x >= 500000 & x <= 588000 & y >= 135000 & y <= 225000)
+save(LMaxtemp, file = "Z:/home/DATA/Data/Maxtemp.RData")
+
+Press$y <- (Press$y * 1000) - 200000
+Press$x <- (Press$x * 1000) - 200000
+LPress <- subset(Press, x >= 500000 & x <= 588000 & y >= 135000 & y <= 225000)
+save(LPress, file = "Z:/home/DATA/Data/Press.RData")
+
+```
+
+Join all and save
+
+```{r join_london}
+
+climate <- cbind(LTemp, LHumid$lyr.1, LPrecip$lyr.1, LMaxtemp$lyr.1, LPress$lyr.1)
+
+names(climate)[5:9] <- c("Temp", "Humid", "Precip", "MaxTemp", "Press")
+
+save(climate, file = "Z:/home/DATA/Data/4-Climate.RData")
+```

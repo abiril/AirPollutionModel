@@ -1,0 +1,44 @@
+---
+title: "18-Greenspace"
+author: "Abi Riley"
+date: "2024-10-30"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(terra)
+library(sf)
+
+```
+
+Load in data from QGIS and create a raster 
+
+```{r qgis}
+
+green.grid <- read.csv("Jobs/ST_INLA/FINAL/FINAL/NEW/DATA PREP FINAL/Data/Greenspace/Greenspace Areas.csv")
+green.grid$Area <- ifelse(!is.na(green.grid$Area), green.grid$Area, 0)
+
+green.grid$Area <- green.grid$Area/10000
+green.grid <- green.grid[,c("left","bottom", "Area")]
+
+grid <- terra::rast(green.grid, type = "xyz", crs ="EPSG:27700")
+plot(grid)
+
+names(green.grid) <- c("Easting", "Northing", "Green_Area")
+green.grid$Easting <- green.grid$Easting/1000
+green.grid$Northing <- green.grid$Northing/1000
+
+save(green.grid, file = "DATA/Data/18-Greenspace.RData")
+
+
+```

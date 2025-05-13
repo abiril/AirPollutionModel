@@ -1,0 +1,320 @@
+---
+title: "18-LAEI"
+author: "Abi Riley"
+date: "2024-07-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ncdf4)
+library(terra)
+library(readxl)
+library(ggplot2)
+#library(reshape2)
+#library(scico)
+library(dplyr)
+library(tidyr)
+library(sf)
+library(DescTools)
+
+```
+
+All processing for LAEI, for years 2009, 2013, 2016 and 2019 PM2.5
+
+LAEI 2019
+
+```{r}
+
+LAEI2019 <- read.csv("Objective 1/Data/LAEI/laei_LAEI2019v3_CorNOx15_PM25.csv")
+
+
+LAEI2019$x.grid <- ifelse((LAEI2019$x %/% 500) %% 2 == 0, (LAEI2019$x %/% 500)/2, ((LAEI2019$x %/% 500) - 1)/2)
+LAEI2019$y.grid <- ifelse((LAEI2019$y %/% 500) %% 2 == 0, (LAEI2019$y %/% 500)/2, ((LAEI2019$y %/% 500) - 1)/2)
+
+LAEI2019.grid <- aggregate(LAEI2019$conc, by = list(LAEI2019$x.grid, LAEI2019$y.grid), FUN = mean)
+names(LAEI2019.grid) <- c("x", "y", "PM25")
+LAEI2019.grid$x <- (LAEI2019.grid$x * 1000) + 500
+LAEI2019.grid$y <- (LAEI2019.grid$y * 1000) - 500
+
+rm(LAEI2019)
+
+```
+
+LAEI 2016
+
+```{r}
+LAEI2016 <- read.csv("Objective 1/Data/LAEI/LAEI2016_2016_PM25.csv")
+
+head(LAEI2016)
+
+LAEI2016$x.grid <- ifelse((LAEI2016$x %/% 500) %% 2 == 0, (LAEI2016$x %/% 500)/2, ((LAEI2016$x %/% 500) - 1)/2)
+LAEI2016$y.grid <- ifelse((LAEI2016$y %/% 500) %% 2 == 0, (LAEI2016$y %/% 500)/2, ((LAEI2016$y %/% 500) - 1)/2)
+
+LAEI2016.grid <- aggregate(LAEI2016$conc, by = list(LAEI2016$x.grid, LAEI2016$y.grid), FUN = mean)
+names(LAEI2016.grid) <- c("x", "y", "PM25")
+LAEI2016.grid$x <- (LAEI2016.grid$x * 1000) + 500
+LAEI2016.grid$y <- (LAEI2016.grid$y * 1000) - 500
+
+rm(LAEI2016)
+
+```
+
+LAEI 2013
+
+```{r}
+
+LAEI2013 <- read.csv("Objective 1/Data/LAEI/PostLAEI2013_2013_PM25.csv")
+
+head(LAEI2013)
+
+LAEI2013$x.grid <- ifelse((LAEI2013$x %/% 500) %% 2 == 0, (LAEI2013$x %/% 500)/2, ((LAEI2013$x %/% 500) - 1)/2)
+LAEI2013$y.grid <- ifelse((LAEI2013$y %/% 500) %% 2 == 0, (LAEI2013$y %/% 500)/2, ((LAEI2013$y %/% 500) - 1)/2)
+
+LAEI2013.grid <- aggregate(LAEI2013$conc, by = list(LAEI2013$x.grid, LAEI2013$y.grid), FUN = mean)
+names(LAEI2013.grid) <- c("x", "y", "PM25")
+LAEI2013.grid$x <- (LAEI2013.grid$x * 1000) + 500
+LAEI2013.grid$y <- (LAEI2013.grid$y * 1000) - 500
+
+rm(LAEI2013)
+
+```
+
+LAEI 2008     
+
+```{r}
+
+library(sf)
+LAEI2008_shp <- read_sf("Objective 1/Data/LAEI/LAEI_2008/LAEI08_PM25e.shp")
+LAEI2008 <- as.data.frame(st_drop_geometry(LAEI2008_shp))
+rm(LAEI2008_shp)
+
+names(LAEI2008)[c(1,2)] <- c("x", "y")
+
+LAEI2008$x.grid <- ifelse((LAEI2008$x %/% 500) %% 2 == 0, (LAEI2008$x %/% 500)/2, ((LAEI2008$x %/% 500) - 1)/2)
+LAEI2008$y.grid <- ifelse((LAEI2008$y %/% 500) %% 2 == 0, (LAEI2008$y %/% 500)/2, ((LAEI2008$y %/% 500) - 1)/2)
+
+LAEI2008.grid <- aggregate(LAEI2008$LAEI08_08, by = list(LAEI2008$x.grid, LAEI2008$y.grid), FUN = mean)
+names(LAEI2008.grid) <- c("x", "y", "PM25")
+LAEI2008.grid$x <- (LAEI2008.grid$x * 1000) + 500
+LAEI2008.grid$y <- (LAEI2008.grid$y * 1000) - 500
+
+rm(LAEI2008)
+
+```
+
+Joining 
+
+```{r}
+LAEI2019.grid$Year <- 2019
+LAEI2016.grid$Year <- 2016
+LAEI2013.grid$Year <- 2013
+LAEI2008.grid$Year <- 2008
+
+LAEI <- rbind(LAEI2019.grid, LAEI2016.grid, LAEI2013.grid, LAEI2008.grid)
+names(LAEI)[3] <- "LAEI PM25"
+
+save(LAEI, file = "DATA/Data/16-LAEI_PM25.csv")
+
+```
+
+All processing for LAEI, for years 2009, 2013, 2016 and 2019 NO2
+
+LAEI 2019
+
+```{r}
+
+LAEI2019 <- read.csv("Objective 1/Data/LAEI/laei_LAEI2019v3_CorNOx15_NO2.csv")
+
+#LAEI2019 <- subset(LAEI2019, x >= 501500 & x <= 561500 & y <= 202500 & y >= 151500)
+
+LAEI2019$x.grid <- ifelse((LAEI2019$x %/% 500) %% 2 == 0, (LAEI2019$x %/% 500)/2, ((LAEI2019$x %/% 500) - 1)/2)
+LAEI2019$y.grid <- ifelse((LAEI2019$y %/% 500) %% 2 == 0, (LAEI2019$y %/% 500)/2, ((LAEI2019$y %/% 500) - 1)/2)
+
+LAEI2019.grid <- aggregate(LAEI2019$conc, by = list(LAEI2019$x.grid, LAEI2019$y.grid), FUN = mean)
+names(LAEI2019.grid) <- c("x", "y", "NO2")
+LAEI2019.grid$x <- (LAEI2019.grid$x * 1000) + 500
+LAEI2019.grid$y <- (LAEI2019.grid$y * 1000) - 500
+
+rm(LAEI2019)
+
+```
+
+LAEI 2016
+
+```{r}
+LAEI2016 <- read.csv("Objective 1/Data/LAEI/LAEI2016_2016_NO2.csv")
+
+head(LAEI2016)
+
+LAEI2016$x.grid <- ifelse((LAEI2016$x %/% 500) %% 2 == 0, (LAEI2016$x %/% 500)/2, ((LAEI2016$x %/% 500) - 1)/2)
+LAEI2016$y.grid <- ifelse((LAEI2016$y %/% 500) %% 2 == 0, (LAEI2016$y %/% 500)/2, ((LAEI2016$y %/% 500) - 1)/2)
+
+LAEI2016.grid <- aggregate(LAEI2016$conc, by = list(LAEI2016$x.grid, LAEI2016$y.grid), FUN = mean)
+names(LAEI2016.grid) <- c("x", "y", "NO2")
+LAEI2016.grid$x <- (LAEI2016.grid$x * 1000) + 500
+LAEI2016.grid$y <- (LAEI2016.grid$y * 1000) - 500
+
+rm(LAEI2016)
+
+```
+
+LAEI 2013
+
+```{r}
+
+LAEI2013 <- read.csv("Objective 1/Data/LAEI/PostLAEI2013_2013_NO2.csv")
+
+head(LAEI2013)
+
+LAEI2013$x.grid <- ifelse((LAEI2013$x %/% 500) %% 2 == 0, (LAEI2013$x %/% 500)/2, ((LAEI2013$x %/% 500) - 1)/2)
+LAEI2013$y.grid <- ifelse((LAEI2013$y %/% 500) %% 2 == 0, (LAEI2013$y %/% 500)/2, ((LAEI2013$y %/% 500) - 1)/2)
+
+LAEI2013.grid <- aggregate(LAEI2013$conc, by = list(LAEI2013$x.grid, LAEI2013$y.grid), FUN = mean)
+names(LAEI2013.grid) <- c("x", "y", "NO2")
+LAEI2013.grid$x <- (LAEI2013.grid$x * 1000) + 500
+LAEI2013.grid$y <- (LAEI2013.grid$y * 1000) - 500
+
+rm(LAEI2013)
+
+```
+
+LAEI 2008     
+
+```{r}
+
+library(sf)
+LAEI2008_shp <- read_sf("Objective 1/Data/LAEI/LAEI_2008/LAEI08_NO2a.shp")
+LAEI2008 <- as.data.frame(st_drop_geometry(LAEI2008_shp))
+rm(LAEI2008_shp)
+
+names(LAEI2008)[c(1,2)] <- c("x", "y")
+
+LAEI2008$x.grid <- ifelse((LAEI2008$x %/% 500) %% 2 == 0, (LAEI2008$x %/% 500)/2, ((LAEI2008$x %/% 500) - 1)/2)
+LAEI2008$y.grid <- ifelse((LAEI2008$y %/% 500) %% 2 == 0, (LAEI2008$y %/% 500)/2, ((LAEI2008$y %/% 500) - 1)/2)
+
+LAEI2008.grid <- aggregate(LAEI2008$LAEI08_08, by = list(LAEI2008$x.grid, LAEI2008$y.grid), FUN = mean)
+names(LAEI2008.grid) <- c("x", "y", "NO2")
+LAEI2008.grid$x <- (LAEI2008.grid$x * 1000) + 500
+LAEI2008.grid$y <- (LAEI2008.grid$y * 1000) - 500
+
+rm(LAEI2008)
+
+```
+
+Joining 
+
+```{r}
+LAEI2019.grid$Year <- 2019
+LAEI2016.grid$Year <- 2016
+LAEI2013.grid$Year <- 2013
+LAEI2008.grid$Year <- 2008
+
+LAEI <- rbind(LAEI2019.grid, LAEI2016.grid, LAEI2013.grid, LAEI2008.grid)
+names(LAEI)[3] <- "LAEI NO2"
+
+save(LAEI, file = "DATA/Data/16-LAEI_NO2.csv")
+
+```
+
+
+
+Time series interpolation
+
+```{r}
+
+load(file = "DATA/Data/16-LAEI_PM25.csv")
+
+LAEI$site <- as.numeric(as.factor(paste(LAEI$x, LAEI$y, sep = "_")))
+
+sites <- unique(LAEI[,c("site", "x", "y")])
+
+LAEI <- pivot_wider(LAEI, names_from = Year, values_from = `LAEI PM25`)
+names(LAEI)[c(4,5,6,7)] <- c("Year_2019", "Year_2016", "Year_2013", "Year_2008")
+LAEI[,c("Year_2009", "Year_2010", "Year_2011", "Year_2012", "Year_2014", "Year_2015", "Year_2017", "Year_2018")] <- NA
+LAEI <- subset(LAEI, Year_2008 >= 0 & Year_2019 >= 0)
+LAEI <- LAEI[order(LAEI$site), order(names(LAEI))]
+
+LAEI$Year_2009 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + (LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+LAEI$Year_2010 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + 2*(LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+LAEI$Year_2011 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + 3*(LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+LAEI$Year_2012 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + 4*(LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+
+LAEI$Year_2014 <- ifelse(LAEI$Year_2013 >= 0 & LAEI$Year_2016 >= 0, LAEI$Year_2013 + (LAEI$Year_2016 - LAEI$Year_2013)/3, NA)
+LAEI$Year_2015 <- ifelse(LAEI$Year_2013 >= 0 & LAEI$Year_2016 >= 0, LAEI$Year_2013 + 2*(LAEI$Year_2016 - LAEI$Year_2013)/3, NA)
+
+LAEI$Year_2017 <- ifelse(LAEI$Year_2016 >= 0 & LAEI$Year_2019 >= 0, LAEI$Year_2016 + (LAEI$Year_2019 - LAEI$Year_2016)/3, NA)
+LAEI$Year_2018 <- ifelse(LAEI$Year_2016 >= 0 & LAEI$Year_2019 >= 0, LAEI$Year_2016 + 2*(LAEI$Year_2019 - LAEI$Year_2016)/3, NA)
+
+summary(LAEI)
+
+library(stringr)
+LAEI <- pivot_longer(LAEI, cols = c(4:15), names_to = "Year", values_to = "LAEI PM25")
+LAEI$Year <- as.numeric(str_split_i(LAEI$Year, "_", 2))
+
+save(LAEI, file = "DATA/Data/16-LAEI_PM25_Filled.csv")
+
+```
+
+
+Time series interpolation
+
+```{r}
+
+load(file = "DATA/Data/16-LAEI_NO2.csv")
+
+#LAEI <- merge(LAEI.PM25, LAEI.NO2, by = c("x", "y", "Year"), all = TRUE)
+LAEI$site <- as.numeric(as.factor(paste(LAEI$x, LAEI$y, sep = "_")))
+
+sites <- unique(LAEI[,c("site", "x", "y")])
+
+LAEI <- pivot_wider(LAEI, names_from = Year, values_from = `LAEI NO2`)
+names(LAEI)[c(4,5,6,7)] <- c("Year_2019", "Year_2016", "Year_2013", "Year_2008")
+LAEI[,c("Year_2009", "Year_2010", "Year_2011", "Year_2012", "Year_2014", "Year_2015", "Year_2017", "Year_2018")] <- NA
+LAEI <- subset(LAEI, Year_2008 >= 0 & Year_2019 >= 0)
+LAEI <- LAEI[order(LAEI$site), order(names(LAEI))]
+
+LAEI$Year_2009 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + (LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+LAEI$Year_2010 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + 2*(LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+LAEI$Year_2011 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + 3*(LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+LAEI$Year_2012 <- ifelse(LAEI$Year_2008 >= 0 & LAEI$Year_2013 >= 0, LAEI$Year_2008 + 4*(LAEI$Year_2013 - LAEI$Year_2008)/5, NA)
+
+LAEI$Year_2014 <- ifelse(LAEI$Year_2013 >= 0 & LAEI$Year_2016 >= 0, LAEI$Year_2013 + (LAEI$Year_2016 - LAEI$Year_2013)/3, NA)
+LAEI$Year_2015 <- ifelse(LAEI$Year_2013 >= 0 & LAEI$Year_2016 >= 0, LAEI$Year_2013 + 2*(LAEI$Year_2016 - LAEI$Year_2013)/3, NA)
+
+LAEI$Year_2017 <- ifelse(LAEI$Year_2016 >= 0 & LAEI$Year_2019 >= 0, LAEI$Year_2016 + (LAEI$Year_2019 - LAEI$Year_2016)/3, NA)
+LAEI$Year_2018 <- ifelse(LAEI$Year_2016 >= 0 & LAEI$Year_2019 >= 0, LAEI$Year_2016 + 2*(LAEI$Year_2019 - LAEI$Year_2016)/3, NA)
+
+summary(LAEI)
+
+library(stringr)
+LAEI <- pivot_longer(LAEI, cols = c(4:15), names_to = "Year", values_to = "LAEI NO2")
+LAEI$Year <- as.numeric(str_split_i(LAEI$Year, "_", 2))
+
+save(LAEI, file = "DATA/Data/16-LAEI_NO2_Filled.csv")
+
+```
+
+Join
+
+```{r join}
+
+load(file = "DATA/Data/16-LAEI_NO2_Filled.csv")
+LAEI.NO2 <- LAEI
+load(file = "DATA/Data/16-LAEI_PM25_Filled.csv")
+LAEI.PM25 <- LAEI
+
+LAEI <- merge(LAEI.NO2, LAEI.PM25, by = c("site","x","y","Year"))
+
+save(LAEI, file = "DATA/Data/16-LAEI_Filled.csv")
+
+```
+

@@ -1,0 +1,137 @@
+---
+title: "9-PCM"
+output: html_document
+date: "2024-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(terra)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(sf)
+
+```
+
+Loop to read in data, turn into a raster and dataframe
+
+```{r data}
+
+PCM <- list()
+PCM.r <- list()
+PCM.df <- list()
+
+
+for(i in 1:16) {
+  PCM[[i]] <- read.csv(paste("Z:/home/Objective 1/Data/PM25 PCM 2005-2020/PCM ",2004 + i,".csv", sep = ""))[,-1]
+  colnames(PCM[[i]]) <- c("x", "y", "PM2.5")
+  PCM[[i]]$PM2.5 <- as.numeric(PCM[[i]]$PM2.5)
+  
+  PCM.r[[i]] <- rast(PCM[[i]][,c("x", "y", "PM2.5")], type = "xyz", crs = "EPSG:27700")
+  PCM.df[[i]] <- as.data.frame(PCM.r[[i]], xy = TRUE)
+  PCM.df[[i]]$Year <- i + 2004
+}
+
+PCM.DF <- do.call(rbind, PCM.df)
+
+```
+
+Crop to London and save
+
+```{r crop}
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+
+LPCM.r <- list()
+LPCM.df <- list()
+for (i in 1:16){
+    LPCM.r[[i]] <- crop(PCM.r[[i]], bbox)
+    LPCM.df[[i]] <- as.data.frame(LPCM.r[[i]], xy = TRUE)
+    LPCM.df[[i]]$Year <- i + 2004
+}
+
+LPCM.DF <- do.call(rbind, LPCM.df)
+
+save(LPCM.DF, file = "DATA/Data/8-PCM PM25.RData")
+
+```
+
+Same for NO2
+
+
+Loop to read in data, turn into a raster and dataframe
+
+```{r data}
+
+PCM <- list()
+PCM.r <- list()
+PCM.df <- list()
+
+
+for(i in 1:16) {
+  PCM[[i]] <- read.csv(paste("Z:/home/Objective 1/Data/NO2 PCM 2005-2020/PCM ", 2004 + i,".csv", sep = ""))[-c(1:5),-1]
+  colnames(PCM[[i]]) <- c("x", "y", "NO2")
+  PCM[[i]]$NO2 <- as.numeric(PCM[[i]]$NO2)
+  
+  PCM.r[[i]] <- rast(PCM[[i]][,c("x", "y", "NO2")], type = "xyz", crs = "EPSG:27700")
+  PCM.df[[i]] <- as.data.frame(PCM.r[[i]], xy = TRUE)
+  PCM.df[[i]]$Year <- i + 2004
+}
+
+PCM.DF <- do.call(rbind, PCM.df)
+
+
+```
+
+Crop to London and save
+
+```{r crop}
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+
+LPCM.r <- list()
+LPCM.df <- list()
+for (i in 1:16){
+    LPCM.r[[i]] <- crop(PCM.r[[i]], bbox)
+    LPCM.df[[i]] <- as.data.frame(LPCM.r[[i]], xy = TRUE)
+    LPCM.df[[i]]$Year <- i + 2004
+}
+
+LPCM.DF <- do.call(rbind, LPCM.df)
+
+save(LPCM.DF, file = "DATA/Data/8-PCM NO2.RData")
+
+```
+
+Join together and save
+
+```{r join}
+
+load(file = "DATA/Data/8-PCM PM25.RData")
+PM25 <- LPCM.DF
+load(file = "DATA/Data/8-PCM NO2.RData")
+NO2 <- LPCM.DF
+
+PCM <- merge(PM25, NO2, by = c("x", "y", "Year"), all = TRUE)
+save(PCM, file = "DATA/Data/8-PCM.RData")
+
+load(file = "DATA/Data/8-PCM.RData")
+
+
+```

@@ -1,0 +1,53 @@
+---
+title: "14-Population"
+output: html_document
+date: "2024-04-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(terra)
+library(sf)
+
+```
+
+Load in data as rast and project
+
+```{r data}
+
+pop.r <- rast("Z:/home/Objective 1/Data/Population/gbr_ppp_2018_1km_Aggregated.tif")
+
+```
+
+Make new grid 
+
+```{r grid}
+
+bbox <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+```
+
+Reproject to grid and save as Data Frame
+```{r sf}
+
+pop.r <- project(pop.r, bbox)
+
+pop.df <- as.data.frame(pop.r, xy = TRUE)
+names(pop.df)[3] <- "pop"
+
+save(pop.df, file = "DATA/Data/12-Population.RData")
+
+```

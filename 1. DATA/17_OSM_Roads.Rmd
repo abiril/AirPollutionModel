@@ -1,0 +1,367 @@
+---
+title: "D-Roads"
+author: "Abi Riley"
+date: "2024-10-31"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+https://jcoliver.github.io/learn-r/017-open-street-map.html
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(osmdata)
+library(ggplot2)
+library(sf)
+library(terra)
+
+```
+
+Data
+
+```{r data}
+
+load(file = "DATA/Data/C-All and Sitedata b.RData")
+
+sitedata <- subset(all, !is.na(`Site Name`))
+all.grid <- subset(all, is.na(`Site Name`))
+
+
+```
+
+Transform to Lat/Long
+
+```{r lat/long}
+
+all.sf <- st_as_sf(all.grid, coords = c("Easting","Northing"), crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs")
+all.sf <- st_transform(all.sf, crs = "EPSG:4326")
+st_bbox(all.sf)
+
+```
+
+London bounding box
+
+```{r bbox}
+
+London <- matrix(data = c(-0.5302177, 0.3660678, 51.2656611, 51.7113983),
+                 nrow = 2,
+                 byrow = TRUE)
+colnames(London) <- c("min", "max")
+rownames(London) <- c("x", "y")
+
+```
+
+Load in roads from osm
+
+```{r osm-roads}
+
+London_motorway <- getbb(place_name = "London") %>%
+  opq(timeout = 50) %>%
+  add_osm_feature(key = "highway", 
+                  value = c("motorway")) %>%
+  osmdata_sf()
+
+London_motorway_sf <- st_as_sf(London_motorway$osm_lines) %>% 
+  st_transform(crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+st_write(London_motorway_sf$geometry, "DATA/Data/D-OSM Motorways 3.shp", append = FALSE)
+
+London_primary <- getbb(place_name = "London") %>%
+  opq(timeout = 50) %>%
+  add_osm_feature(key = "highway", 
+                  value = c("motorway", "primary")) %>%
+  osmdata_sf()
+
+London_primary_sf <- st_as_sf(London_primary$osm_lines) %>% 
+  st_transform(crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+st_write(London_primary_sf$geometry, "DATA/Data/D-OSM Primary Roads 2.shp", append = FALSE)
+
+London_primary_only <- getbb(place_name = "London") %>%
+  opq(timeout = 50) %>%
+  add_osm_feature(key = "highway", 
+                  value = c("primary")) %>%
+  osmdata_sf()
+
+London_primary_only_sf <- st_as_sf(London_primary_only$osm_lines) %>% 
+  st_transform(crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+st_write(London_primary_only_sf$geometry, "DATA/Data/D-OSM Primary Roads Only.shp", append = FALSE)
+
+
+load(file = "DATA/Data/D-OSM Major Roads.RData")
+major.lines <- London_major$osm_lines %>% 
+  st_transform(crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+st_write(major.lines$geometry, "DATA/Data/D-OSM Major Roads 2.shp", append = FALSE)
+
+load(file = "DATA/Data/D-OSM Minor Roads.RData")
+minor.lines <- London_minor$osm_lines %>% 
+  st_transform(crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+st_write(minor.lines$geometry, "DATA/Data/D-OSM Minor Roads.shp", append = FALSE)
+
+
+```
+
+
+Method:
+
+1. Take centroid (Easting + 0.5km and Northing + 0.5km)
+2. First, major road within 50m radii
+3. Second, minor road within 10m radii
+4. Else, corrine urban/rural classification
+5. Check again site types and normal corrine
+
+
+
+Grid centroids
+
+```{r grid}
+
+x <- rep(seq(502.5, 563.5, 1), 49)
+y.coords <- rep(seq(154.5, 202.5, 1), 62)
+y <- y.coords[order(y.coords)]
+grid <- as.data.frame(cbind(x, y))
+head(grid)
+
+grid$grid.id <- 1:nrow(grid)
+
+grid.r <- terra::rast(grid, type = "xyz", 
+                      crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+
+
+
+```
+
+Site data to sf
+
+```{r sites}
+
+sites <- st_drop_geometry(unique(sitedata[,c("Site Name", "Easting", "Northing")]))
+sites$siteid <- 1:nrow(sites)
+sites[,c("Easting","Northing")] <- sites[,c("Easting","Northing")]/1000
+
+sitedata[,c("Easting","Northing")] <- sitedata[,c("Easting","Northing")]/100
+
+sites.sf <- st_as_sf(sites, coords = c("Easting","Northing"), crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+
+
+```
+
+
+
+```{r 50m}
+
+# major
+major.lines <- London_major$osm_lines
+major.sf <- st_as_sf(major.lines)
+major.sf <- st_transform(major.sf, crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+
+major.v <- as.lines(vect(major.sf))
+grid.major <- terra::extract(grid.r, major.v)
+plot(grid.major)
+
+grid.major.df <- left_join(grid, grid.major, by = "grid.id") 
+grid.major.count <- count(grid.major.df, "grid.id")
+
+grid.wMajor <- left_join(grid, grid.major.count, by = "grid.id")
+grid.wMajor$major <- ifelse(is.na(grid.wMajor$freq), 0,
+                            ifelse(grid.wMajor$freq >= 1, 1, 0))
+
+#primary
+
+primary.lines <- London_primary$osm_lines
+primary.sf <- st_as_sf(primary.lines)
+primary.sf <- st_transform(primary.sf, crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+
+primary.v <- as.lines(vect(primary.sf))
+grid.primary <- terra::extract(grid.r, primary.v)
+plot(grid.primary)
+
+grid.primary.df <- left_join(grid, grid.primary, by = "grid.id") 
+grid.primary.count <- count(grid.primary.df, "grid.id")
+
+grid.wprimary <- left_join(grid, grid.primary.count, by = "grid.id")
+grid.wprimary$primary <- ifelse(is.na(grid.wprimary$freq), 0,
+                            ifelse(grid.wprimary$freq >= 1, 1, 0))
+
+#motorway
+motorway.lines <- London_motorway$osm_lines
+motorway.sf <- st_as_sf(motorway.lines)
+motorway.sf <- st_transform(motorway.sf, crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+
+motorway.v <- as.lines(vect(motorway.sf))
+grid.motorway <- terra::extract(grid.r, motorway.v)
+plot(grid.motorway)
+
+grid.motorway.df <- left_join(grid.motorway, grid, by = "grid.id")
+grid.motorway.count <- count(grid.motorway.df, "grid.id")
+
+grid.wMotorway <- left_join(grid, grid.motorway.count, by = "grid.id")
+
+
+grid.wMotorway$motorway <- ifelse(is.na(grid.wMotorway$freq), 0,
+                            ifelse(grid.wMotorway$freq >= 1, 1, 0)) 
+
+grid.wMotorway <- grid.wMotorway %>% 
+  select(-c("freq"))
+
+save(grid.wMotorway, file = "DATA/Data/Motorway_Indicator.RData")
+
+motorway.r <- rast(grid.wMotorway, type = "xyz")
+plot(motorway.r)
+
+# with 50m buffer
+motorway.lines2 <- st_transform(motorway.lines, crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs") %>% 
+  select(c("osm_id", "ref", "geometry"))
+
+grid.df <- crds(grid.r, df = TRUE)
+grid.sf <- st_as_sf(crds(grid.r, df = TRUE), coords = c("x", "y"), crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs")
+
+grid.buffer <- sf::st_buffer(grid.sf,
+              dist = 1.05,
+              endCapStyle = "SQUARE")
+
+grid.buffer$ID <- 1:nrow(grid.buffer)
+
+grid.motorway.df <- as.data.frame(st_intersects(grid.buffer, motorway.lines2))
+
+names(grid.motorway.df)[1] <- "grid.id"
+
+grid.motorway.df <- left_join(grid.motorway.df, grid, by = "grid.id")
+grid.motorway.count <- count(grid.motorway.df, "grid.id")
+
+grid.wMotorway <- left_join(grid.wMotorway, grid.motorway.count, by = "grid.id")
+
+grid.wMotorway$motorway.buffer <- ifelse(is.na(grid.wMotorway$freq), 0,
+                            ifelse(grid.wMotorway$freq >= 1, 1, 0)) 
+
+
+save(grid.wMotorway, file = "DATA/Data/Motorway_Indicator_wBuffer.RData")
+
+grid.wMotorway <- grid.wMotorway[,c("x", "y", "motorway", "motorway.buffer")]
+names(grid.wMotorway)[1:2] <- c("Easting", "Northing")
+
+save(grid.wMotorway, file = "DATA/Data/Motorway_Indicator_wBuffer_Named.RData")
+
+
+```
+
+
+```{r}
+### which motorways
+
+motorway.sf$ID <- 1:nrow(motorway.sf)
+motorways <- unique(motorway.sf[,c("ID", "ref")])
+grid.motorway.names <- left_join(grid.motorway.df, motorways, by = "ID")
+grid.motorway.names$motorway <- 1
+
+grid.motorway.names.wide <- spread(grid.motorway.names, ref, motorway)
+grid.motorway.names.wide$motorways <- print()
+
+library(stringr)
+grid.motorway.names.wide$motorways <- apply(grid.motorway.names.wide[6:14], 1, function(x) toString(names(x)[x >= 1]))
+
+
+
+```
+
+
+Traffic indicator
+
+```{r traffic}
+
+grid$URT <- ifelse(grid$major50, "Traffic",
+                   ifelse(grid$minor10, "Traffic", NA))
+sites$URT <- ifelse(sites$major50, "Traffic",
+                    ifelse(sites$minor10, "Traffic", NA))
+
+```
+
+Join
+
+```{r join}
+
+load(file = "DATA/Data/C-All and Sitedata b.RData")
+
+sitedata <- subset(all, !is.na(`Site Name`))
+sitedata[,c("Easting","Northing")] <- sitedata[,c("Easting","Northing")]/1000
+
+sites <- sites[,c("Site Name","major50","minor10","URT")]
+sitedata <- left_join(sitedata, sites, by = "Site Name")
+
+all.grid <- subset(all, is.na(`Site Name`))
+all.grid[,c("Easting","Northing")] <- all.grid[,c("Easting","Northing")]/1000
+
+names(grid)[c(1,2)] <- c("Easting", "Northing")
+all <- left_join(all.grid, grid, by = c("Easting", "Northing"))
+
+
+
+```
+
+Add corine to label Urban-Rural
+
+*LABEL1: Agricultural areas -> Rural
+*LABEL1: Artificial surfaces -
+*   - Urban fabric (Discontinuous and continuous urban fabric) -> Urban
+*   - Artificial, non-agricultural vegetated areas (Sport and leisure facilities) -> Urban?
+*   - Artificial, non-agricultural vegetated areas (Green urban areas) -> Urban
+*   - Industrial, commercial and transport units -> Urban
+*   - Mine, dump and construction sites -> Urban?
+* LABEL1: Forest and semi natural areas -> Rural
+* LABEL1: Water bodies -> Rural
+* LABEL1: Wetlands -> Rural
+
+```{r corine}
+
+all$corr.UR <- ifelse(all$LABEL1 %in% c("Agricultural areas", "Forest and semi natural areas", "Water bodies", "Wetlands"),
+                         "Rural", "Urban")
+sitedata$corr.UR <- ifelse(sitedata$LABEL1 %in% c("Agricultural areas", "Forest and semi natural areas", "Water bodies", "Wetlands"),
+                      "Rural", "Urban")
+
+all$URT <- ifelse(!is.na(all$URT), all$URT, all$corr.UR)
+sitedata$URT <- ifelse(!is.na(sitedata$URT), sitedata$URT, sitedata$corr.UR)
+
+
+```
+
+Save
+
+```{r save2}
+
+save(all, file = "DATA/Data/D-All b.RData")
+save(sitedata, file = "DATA/Data/D-Sitedata b.RData")
+
+```
+
+
+Add new roads
+
+OSM sum of road lengths
+
+```{r lengths}
+
+load(file = "DATA/Data/D-All b.RData")
+load(file = "DATA/Data/D-Sitedata b.RData")
+
+major_density <- read.csv("DATA/Data/QGIS/Major_density2.csv") 
+primary_density <- read.csv("DATA/Data/QGIS/MotorwayPrimary_density2.csv")
+motorway_density <- read.csv("DATA/Data/QGIS/Motorway_density2.csv")
+primaryonly_density <- read.csv("DATA/Data/QGIS/PrimaryOnly_density.csv")
+
+
+road_density <- cbind(major_density, primary_density$COUNT, motorway_density$COUNT, primaryonly_density$COUNT)
+names(road_density)[c(10:13)] <- c("major_dens", "primary_dens", "motorway_dens","primaryonly_dens")
+
+road_density$Easting <- (road_density$left + 500)/1000
+road_density$Northing <- (road_density$bottom + 500)/1000
+
+road_density <- road_density[,c("Easting", "Northing", "major_dens", "primary_dens", "motorway_dens", "primaryonly_dens")]
+
+save(road_density, file = "DATA/Data/Road_density_OSM.RData")
+
+
+```

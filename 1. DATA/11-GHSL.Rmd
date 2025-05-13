@@ -1,0 +1,169 @@
+---
+title: "12-GHSL"
+output: html_document
+date: "2024-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(terra)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(sf)
+
+```
+
+#1. Download GHSL tiles
+
+```{r}
+temp <- tempfile()
+download.file("https://ghsl.jrc.ec.europa.eu/download/GHSL_data_54009_shapefile.zip", temp)
+GHSL <- st_read(unzip(temp)[1])
+st_crs(GHSL)
+rm(temp)
+```
+
+#2. Download AOI shapefile
+
+```{r}
+TTW <- read_sf("Jobs/ST_INLA/Shapefiles/Travel_to_Work_Areas_(Dec_2011)_FEB_in_United_Kingdom.shp")
+London <- subset(TTW, OBJECTID == 92 | OBJECTID == 122)
+London <- st_transform(London, crs = st_crs(GHSL))
+```
+
+#3. Get intersection to get relevant tile IDs
+```{r}
+both <- st_intersection(GHSL, London)
+tiles <- unique(both$tile_id)
+
+#tiles <- subset(tiles, tiles != "R15_C22" & tiles != "R11_C21" & tiles != "R14_C21" & tiles != "R14_C20") ### why are some tiles not WORKING???? AHHHHHH
+
+tiles
+
+tiles <- c("R3_C19", "R3_C18", "R4_C19", "R4_C18")
+```
+
+#4. Specify the website, layers and labels
+```{r}
+root <- "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/"
+
+GHSL_labels <- c("GHS_LAND_GLOBE_R2022A/GHS_LAND_E2018_GLOBE_R2022A_54009_1000/V1-0/tiles/GHS_LAND_E2018_GLOBE_R2022A_54009_1000_V1_0_",
+                 "GHS_POP_GLOBE_R2023A/GHS_POP_E2025_GLOBE_R2023A_54009_1000/V1-0/tiles/GHS_POP_E2025_GLOBE_R2023A_54009_1000_V1_0_",
+                 "GHS_BUILT_S_GLOBE_R2023A/GHS_BUILT_S_E2025_GLOBE_R2023A_54009_1000/V1-0/tiles/GHS_BUILT_S_E2025_GLOBE_R2023A_54009_1000_V1_0_",
+                 "GHS_BUILT_V_GLOBE_R2023A/GHS_BUILT_V_E2025_GLOBE_R2023A_54009_1000/V1-0/tiles/GHS_BUILT_V_E2025_GLOBE_R2023A_54009_1000_V1_0_",
+                 "GHS_SMOD_GLOBE_R2023A/GHS_SMOD_E2025_GLOBE_R2023A_54009_1000/V1-0/tiles/GHS_SMOD_E2025_GLOBE_R2023A_54009_1000_V1_0_")
+
+GHSL_files <- c("GHS_LAND_E2018_GLOBE_R2022A_54009_1000_V1_0_", "GHS_POP_E2025_GLOBE_R2023A_54009_1000_V1_0_",
+                "GHS_BUILT_S_E2025_GLOBE_R2023A_54009_1000_V1_0_", "GHS_BUILT_V_E2025_GLOBE_R2023A_54009_1000_V1_0_",
+                "GHS_SMOD_E2025_GLOBE_R2023A_54009_1000_V1_0_")
+
+GHSL_names <- c("GHSL_land", "GHSL_pop", "GHSL_built_s", "GHSL_built_v", "GHSL_smod")
+
+```
+
+#5. Loop to download file, rasterise and mosaic it, create data frames and save 
+
+```{r}
+which.file <- c(1,1,1,1,2)
+
+options(timeout=50000)
+grid_cell_ghsl <- list()
+grid_df <- list()
+grid_ghsl <- list()
+for(j in 1:length(GHSL_labels)){
+  for (i in 1:length(tiles)){
+    tile.id <- tiles[i]
+    url <- paste(root, GHSL_labels[j], tile.id, ".zip", sep = "")
+    temp <- tempfile()
+    download.file(url, temp)
+    unzipped <- unzip(temp)[which.file[j]]
+    grid_cell_ghsl[[i]] <- rast(unzipped)
+    file.remove(temp)
+  }
+  grid_ghsl[[j]] <- do.call(mosaic, grid_cell_ghsl)
+  grid_df[[j]] <- as.data.frame(grid_ghsl[[j]], xy = TRUE)
+  lapply(paste(GHSL_files[[j]], tile.id, ".tif", sep = ""), file.remove)
+
+}
+```
+
+#6.Create full csv files
+
+```{r}
+ghsl <- grid_df[[1]]
+for (i in 2:length(GHSL_labels)){
+  ghsl <- merge(ghsl, grid_df[[i]], by = c("x", "y"), all = TRUE)
+
+}
+
+head(ghsl)
+names(ghsl) <- c("x", "y", "land", "pop", "built_s", "built_v", "smod")
+
+write.csv(ghsl, file = "DATA/Data/11-GHSL.csv")
+
+```
+
+#7. Changing crs and grid
+
+```{r crs}
+
+###
+library(dplyr)
+library(ncdf4)
+#library(maptools)
+library(fields)
+library(terra)
+library(raster)
+
+bbox <- extent(500000, 588000, 135000, 225000)
+
+ghsl_names <- c("land", "pop", "built_s", "built_v", "smod")
+
+x <- rep(seq(500500, 587500, 1000), 88)
+y.coords <- rep(seq(153500, 224500, 1000), 90)
+y <- y.coords[order(y.coords)]
+empty <- as.data.frame(cbind(x, y))
+
+empty$id <- 1:nrow(empty)
+
+grid <- terra::rast(empty, type = "xyz", crs ="EPSG:27700")
+
+method <- c("bilinear","bilinear","bilinear","bilinear","near")
+
+grid_ghsl[[5]] <- as.factor(grid_ghsl[[5]])
+
+GHSL <- list()
+GHSL.df <- list()
+ghsl.extracted <- list()
+for (i in 1:5) {
+  GHSL[[i]] <- terra::project(grid_ghsl[[i]], "EPSG:27700")
+  GHSL[[i]] <- resample(GHSL[[i]], grid, method = method[i])
+  GHSL[[i]] <- terra::crop(GHSL[[i]], bbox)
+  GHSL.df[[i]] <- as.data.frame(GHSL[[i]], xy = TRUE)
+  names(GHSL.df[[i]])[3] <- ghsl_names[i]
+  
+}
+
+
+GHSL.DF <- cbind(GHSL.df[[1]], GHSL.df[[2]][,3], GHSL.df[[3]][,3], GHSL.df[[4]][,3], GHSL.df[[5]][,3])
+
+head(GHSL.DF)
+
+save(GHSL, file = "DATA/Data/11-GHSL.RData")
+#all <- all.DF
+
+names(GHSL.DF)[c(3:7)] <- ghsl_names
+
+save(GHSL.DF, file = "DATA/Data/11-GHSL df.RData")
+
+```

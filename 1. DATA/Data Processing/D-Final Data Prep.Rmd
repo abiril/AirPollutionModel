@@ -1,0 +1,373 @@
+---
+title: "D-Final Data Prep w Met Office and NDVI"
+author: "Abi Riley"
+date: "2024-12-28"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(spatstat)
+library(sp)
+library(gstat)
+library(sf)
+library(dplyr)
+library(MatrixModels)
+library(gtools)
+library(rquery)
+
+```
+
+Load data and change coords
+
+```{r data}
+
+load(file = "DATA/Data/C6-All and Sitedata w Road Dens.RData")
+
+head(all)
+
+all[,c("Easting", "Northing")] <- all[,c("Easting", "Northing")]/1000
+
+
+#mean(all$PM25PCM, na.rm = TRUE)
+
+
+```
+
+
+Calculate wind variables
+
+```{r wind}
+
+all$Wind_speed <- sqrt(all$Wind_u^2 + all$Wind_v^2)
+wind_trig <- atan2(all$Wind_u/all$Wind_speed, all$Wind_v/all$Wind_speed)
+all$Wind_deg <- wind_trig * 180/pi + 180
+
+library(dplyr)
+North1 <- c(337.5, 360)
+North2 <- c(0, 22.5)
+NorthEast <- c(22.5, 67.5)
+East <- c(67.5, 112.5)
+SouthEast <- c(112.5, 157.5)
+South <- c(157.5, 202.5)
+SouthWest <- c(202.5, 247.5)
+West <- c(247.5, 292.5)
+NorthWest <- c(292.5, 337.5)
+
+all$Wind_dir <- ifelse(between(all$Wind_deg, North1[1], North1[2]), "N",
+                       ifelse(between(all$Wind_deg, North2[1], North2[2]), "N",
+                              ifelse(between(all$Wind_deg, NorthEast[1], NorthEast[2]), "NE",
+                                     ifelse(between(all$Wind_deg, East[1], East[2]), "E",
+                                            ifelse(between(all$Wind_deg, SouthEast[1], SouthEast[2]), "SE",
+                                                   ifelse(between(all$Wind_deg, South[1], South[2]), "S",
+                                                          ifelse(between(all$Wind_deg, SouthWest[1], SouthWest[2]), "SW",
+                                                                 ifelse(between(all$Wind_deg, West[1], West[2]), "W",
+                                                                        ifelse(between(all$Wind_deg, NorthWest[1], NorthWest[2]), "NW", NA)))))))))
+
+count(all$Wind_dir)
+head(all)
+
+```
+
+Crop 
+
+```{r crop}
+
+Wards <- read_sf("Jobs/ST_INLA/Shapefiles/London_Ward.shp")
+London <- st_transform(Wards, crs = "+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.999601272 +x_0=400000 +y_0=-100000 +ellps=airy +units=km +no_defs" )
+
+### Crop to rectangle
+range(st_coordinates(London)[,1])
+range(st_coordinates(London)[,2])
+
+all <- subset(all, Easting >= range(st_coordinates(London)[,1])[1] - 10 &
+                Easting <= range(st_coordinates(London)[,1])[2]  + 10 &
+                Northing >= range(st_coordinates(London)[,2])[1] - 10 &
+                Northing <= range(st_coordinates(London)[,2])[2] + 10)
+
+```
+
+
+Add missing env types and add some additional variables to sitedata 
+
+```{r add}
+
+griddata <- subset(all, is.na(`Site Name`))
+sitedata <- subset(all, !is.na(`Site Name`))
+
+missing.sites <- data.frame(`Site Name` = c("London Cromwell Road 2", "London Haringey", "London Haringey Priory Park South", "Southwark A2 Old Kent Road", "Tower Hamlets Roadside", "Thurrock"),
+                            `Environment Type` = c("Urban Traffic", "Urban Background", "Urban Background", "Urban Traffic", "Urban Traffic", "Urban Background"))
+
+names(missing.sites) <- c("Site Name", "Environment Type")
+
+all <- left_join(all, missing.sites, by = c("Site Name"))
+
+all$`Environment Type` <- ifelse(!is.na(all$`Environment Type.x`), all$`Environment Type.x`, all$`Environment Type.y`)
+
+names(all)
+all <- all %>% select(-c("Environment Type.x", "Environment Type.y"))
+unique(all$`Environment Type`)
+
+```
+
+Site types
+
+```{r env}
+
+sitedata <- subset(all, !is.na(`Site Name`))
+sites <- unique(sitedata[,c("Site Name","Network","Environment Type")])
+count(sites$`Environment Type`)
+
+all$rural <- ifelse(all$`Environment Type` %in% c("Rural Background"), 1, 0)
+all$urban <- ifelse(all$`Environment Type` %in% c("Rural Background","Suburban", "Suburban Industrial"), 0, 1) # NOTE: exclusionary
+all$suburban <- ifelse(all$`Environment Type` %in% c("Suburban", "Suburban Industrial"), 1, 0)
+
+all$background <- ifelse(all$`Environment Type` %in% c("Kerbside", "Industrial", "Roadside", "Urban Traffic"), 0, 1) # NOTE: exclusionary
+all$industrial <- ifelse(all$`Environment Type` %in% c("Industrial", "Urban Industrial", "Suburban Industrial"), 1, 0)
+all$traffic <- ifelse(all$`Environment Type` %in% c("Kerbside", "Roadside", "Urban Traffic"), 1, 0)
+
+all$Baseline <- ifelse(all$Network == "AURN", 0, 1)
+
+```
+
+
+Duplicate site, choose the London Air one
+
+```{r duplicate}
+
+all <- subset(all, is.na(`Site Name`) | !(Network == "AURN" & `Site Name` == "London Teddington Bushy Park"))
+
+sites <- unique(subset(all, !is.na(`Site Name`))[,c("Site Name","Network","Environment Type", "urban","rural","suburban","background","industrial","traffic")])
+
+```
+
+
+
+Traffic laws
+
+```{r traffic}
+
+## traffic laws
+
+CC <- c(54:120) #June 2014
+all$CC <- as.factor(ifelse(all$Time %in% CC, 1, 0))
+
+LEZ <- c(25:120) #Jan 2012
+all$LEZ <- as.factor(ifelse(all$Time %in% LEZ, 1, 0))
+
+TChar <- c(94:101) # Oct 2017 - Apr 2019
+all$TChar <- as.factor(ifelse(all$Time %in% TChar, 1, 0))
+
+ULEZ <- c(101:120) # Apr 2019
+all$ULEZ <- as.factor(ifelse(all$Time %in% ULEZ, 1, 0))
+
+```
+
+
+Missing pop
+
+```{r pop}
+
+all$pop <- ifelse(is.na(all$pop), 0, all$pop)
+
+```
+
+Corine 
+
+```{r corine}
+
+all$loc.type <- as.character(factor(all$corine, levels = c("Urban","Rural","Industrial/Transport")))
+
+all$loc.rural <- ifelse(all$loc.type == "Rural", 1, 0)
+all$loc.ind <- ifelse(all$loc.type == "Industrial/Transport", 1, 0)
+
+#all %>% count(loc.rural)
+#all %>% count(loc.ind)
+
+all$loc.type <- factor(all$loc.type, levels = c("Urban", "Rural", "Industrial/Transport"),
+                       labels = c("Urban", "Rural", "Industrial/Transport"))
+
+```
+
+OSM and Corine
+
+```{r osm}
+
+all$URT <- ifelse(all$major50, "Traffic",
+                   ifelse(all$minor10, "Traffic", NA))
+
+all$corr.UR <- ifelse(all$LABEL1 %in% c("Agricultural areas", "Forest and semi natural areas", "Water bodies", "Wetlands"),
+                         "Rural", "Urban")
+
+all$URT <- ifelse(!is.na(all$URT), all$URT, all$corr.UR)
+
+all$Rural <- ifelse(all$URT == "Rural", 1, 0)
+all$Traffic <- ifelse(all$URT == "Traffic", 1, 0)
+
+
+save(all, file = "DATA/Data/D-All w New Road Dens.RData")
+
+```
+
+
+Cut time
+
+```{r remove}
+
+load(file = "DATA/Data/D-All w New Road Dens.RData")
+
+unique(all$Time)
+
+all <- subset(all, Time >= 49)
+all$Time <- all$Time - 48
+all <- subset(all, industrial == 0 | is.na(industrial))
+
+save(all, file = "DATA/Data/FINAL 72 months.RData")
+
+```
+
+
+```{r road dens}
+
+load(file = "DATA/Data/FINAL 72 months.RData")
+
+all.no2 <- all
+
+all <- subset(all, is.na(`Site Name`) | (PM25 >= 0 & !(`Site Name` %in% c("Kensington and Chelsea - Green Screen BG",
+                                                                          "Kensington and Chelsea - Green Screen RS",
+                                                                          "Camden - Coopers Lane"))))
+
+save(all, file = "DATA/Data/FINAL PM25 Unscaled.RData")
+
+all <- subset(all.no2, is.na(`Site Name`) | NO2 >= 0)
+
+save(all, file = "DATA/Data/NO2 Unscaled.RData")
+
+
+```
+
+
+Scaling
+
+Numeric variables but not scaling:
+- Green_Area: 0-100, skewed left
+- Land: 400000-1000000, skewed right
+- NDVI: -1000-10000, skewed left and out of range
+- NDVI.scaled: Scaled, -0.1-1
+- NDVI.scaled.valid: 0-1
+- smod: not continuous
+- Wind deg and dir: Not continuous
+- Distance to road: 0-6, skewed left
+- Road densities: 0 - 256, bounded
+
+
+```{r sites}
+
+load(file = "DATA/Data/FINAL 72 months.RData")
+
+all$logPM25PCM <- log(all$PM25PCM)
+all$logNO2PCM <- log(all$NO2PCM)
+all$logPM25AQUM <- log(all$PM25AQUM)
+all$logNO2AQUM <- log(all$NO2AQUM)
+all$logPM25MO <- log(all$PM25MO)
+all$logNO2MO <- log(all$NO2MO)
+all$logPM25MO_2 <- log(all$PM25MO_2)
+all$logNO2MO_2 <- log(all$NO2MO_2)
+all$logPM25LAEI <- log(all$PM25LAEI)
+all$logNO2LAEI <- log(all$NO2LAEI)
+
+all$Green_Area <- all$Green_Area/100
+
+all$primary_dens <- ifelse(is.na(all$primary_dens), 0, all$primary_dens)
+all$major_dens <- ifelse(is.na(all$major_dens), 0, all$major_dens)
+all$primaryonly_dens <- ifelse(is.na(all$primaryonly_dens), 0, all$primaryonly_dens)
+all$minor_dens <- ifelse(is.na(all$minor_dens), 0, all$minor_dens)
+all$all_dens <- ifelse(is.na(all$all_dens), 0, all$all_dens)
+
+
+all$land.scaled <- (all$land - range(all$land)[1])/(range(all$land)[2] - range(all$land)[1])
+
+all$Road_dens.scaled <- (all$Road_dens - range(all$Road_dens)[1])/(range(all$Road_dens)[2] - range(all$Road_dens)[1])
+
+all$major_dens.scaled <- (all$major_dens - range(all$major_dens)[1])/(range(all$major_dens)[2] - range(all$major_dens)[1])
+
+all$primary_dens.scaled <- (all$primary_dens - range(all$primary_dens)[1])/(range(all$primary_dens)[2] - range(all$primary_dens)[1])
+
+all$primaryonly_dens.scaled <- (all$primaryonly_dens - range(all$primaryonly_dens)[1])/(range(all$primaryonly_dens)[2] - range(all$primaryonly_dens)[1])
+
+all$minor_dens.scaled <- (all$minor_dens - range(all$minor_dens)[1])/(range(all$minor_dens)[2] - range(all$minor_dens)[1])
+
+all$all_dens.scaled <- (all$all_dens - range(all$all_dens)[1])/(range(all$all_dens)[2] - range(all$all_dens)[1])
+
+
+
+```
+
+
+```{r scaling}
+
+griddata <- subset(all, is.na(`Site Name`))
+sitedata <- subset(all, !is.na(`Site Name`))
+
+names(griddata)[order(names(griddata))]
+names(sitedata)[order(names(sitedata))]
+
+num.covars <- c("AOD_adj", "AOD_adj2", "AOD_IDW",  "MaxTemp",
+                "BLH", "built_s", "built_v", "Evapo","GHSL.pop","Humid",
+               "NO2AQUM", "NO2MO","NO2MO_2","NO2PCM", "NO2LAEI", "PM25MO_2",
+                "PM25AQUM", "PM25PCM", "PM25MO","PM25LAEI", "pop","Precip",
+                "Press", "Temp","TNO2_IDW", "Wind_speed", "Wind_u","Wind_v")
+
+mean.covars <- apply(griddata[,num.covars], 2, mean, na.rm = TRUE)
+sd.covars <- apply(griddata[,num.covars], 2, sd, na.rm = TRUE)
+
+griddata[,num.covars] <- scale(griddata[,num.covars], center = mean.covars, scale = sd.covars)
+
+sitedata[,num.covars] <- scale(sitedata[,num.covars], center = mean.covars, scale = sd.covars)
+
+```
+
+And for road distance
+
+```{r road}
+
+max.maj <- range(griddata$dist.to.maj)[2]
+max.min <- range(griddata$dist.to.min)[2]
+max.road <- range(griddata$dist.to.road)[2]
+
+# scaling to 0-1
+
+max.km <- max(max.maj, max.min, max.road)
+griddata[,c("dist.to.maj", "dist.to.min", "dist.to.road")] <- griddata[,c("dist.to.maj", "dist.to.min", "dist.to.road")]/max.km
+
+# scaling sitedata on the same scale
+
+range(sitedata$dist.to.maj)
+range(sitedata$dist.to.min)
+range(sitedata$dist.to.road)
+
+sitedata[,c("dist.to.maj", "dist.to.min", "dist.to.road")] <- sitedata[,c("dist.to.maj", "dist.to.min", "dist.to.road")]/max.km
+
+
+all <- rbind(griddata, sitedata)
+
+
+
+
+```
+
+Save 
+
+```{r save}
+
+save(all, file = "DATA/Data/FINAL ALL.RData")
+
+```

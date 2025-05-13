@@ -1,0 +1,68 @@
+---
+title: "19-PM25Sat"
+author: "Abi Riley"
+date: "2024-12-19"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+
+```
+
+## Packages 
+
+```{r packages, echo= FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(terra)
+library(sf)
+library(ncdf4)
+library(terra)
+library(readxl)
+library(tidyr)
+library(DescTools)
+
+```
+Raster for grid
+
+```{r grid}
+
+grid <- rast(ncol=88, nrow=90, 
+             xmin=500000, xmax=588000,
+             ymin=135000, ymax=225000,
+             crs = "EPSG:27700")
+
+```
+
+
+Loop to load in data
+
+```{r load}
+
+#PM25Sat.month <- terra::rast("DATA/data/19-PM25Sat/V5GL0502.HybridPM25.Europe.201001-201001.nc")
+
+PM25Sat <- c(lapply(Sys.glob("DATA/data/19-PM25Sat/V5GL0502.HybridPM25.Europe.20*-20*.nc"), terra::rast))
+
+plot(PM25Sat[[1]])
+
+```
+Project, crop, join
+
+```{r process}
+
+PM25Sat.df <- list()
+for (i in 1:120){
+  PM25Sat.r <- project(PM25Sat[[i]], grid)
+  PM25Sat.df[[i]] <- as.data.frame(PM25Sat.r, xy = TRUE)
+  names(PM25Sat.df[[i]])[3] <- "PM25Sat"
+  PM25Sat.df[[i]]$Time <-i
+}
+
+PM25Sat.df <- do.call(rbind, PM25Sat.df)
+
+save(PM25Sat.df, file = "Z:/home/DATA/Data/14-PM25Sat.RData")
+
+
+```

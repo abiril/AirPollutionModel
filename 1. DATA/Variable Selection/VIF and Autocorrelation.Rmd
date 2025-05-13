@@ -1,0 +1,154 @@
+---
+title: "VIF and Autocorrelation"
+author: "Abi Riley"
+date: "2025-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+set.seed(23)
+
+
+```
+
+Load in packages
+
+```{r packages, echo=FALSE}
+
+library(sp)
+library(INLA)
+library(gstat)
+library(devtools)
+library(sf)
+library(inlabru)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(BoomSpikeSlab)
+
+```
+
+
+## Load in data
+
+```{r data}
+
+load(file = "DATA/Data/FINAL ALL.RData")
+
+all <- subset(all, is.na(`Site Name`) | PM25 >= 0)
+sitedata <- subset(all,  PM25 >= 0)
+
+names(sitedata)[order(names(sitedata))]
+
+```
+
+## Select Model Covariates
+
+```{r covariates}
+
+
+covariates.names <- c("background", "urban", "Baseline",
+                "major50", "minor10", "Traffic",
+                "built_s", "built_v", "GHSL.pop",
+                "Green_Area", "pop", 
+                #"dist.to.maj", "dist.to.min", "dist.to.road",
+                "Road_dens", "loc.ind", "loc.rural",
+                "all_dens.scaled", "major_dens.scaled", 
+                #"minor_dens.scaled","primary_dens.scaled",
+                "PM25MO_2", "PM25PCM",
+                "AOD_adj2", "NDVI_New",
+                "Humid", "Temp", "MaxTemp", "Precip", "Press",
+                "Evapo", "Wind_speed", "Wind_u", "Wind_v")
+
+sitedata$Intercept <- 1
+
+```
+
+# Perform Covariate Selection
+
+Using the package 'spatialRF', we:
+    1. Set thresholds for autocorrelation and VIF
+    2. Calculate the autocorrelation 'auto_cor'
+    3. Cacluate the VIF
+    4. Use the autocorrelation and VIF thresholds to include/exclude variables
+    
+    $VIF_i = \frac{1}{1-R_i^2}$ 
+    
+    for each variable i
+    
+```{r covar_select}
+
+new.covariates <- spatialRF::auto_cor(
+  x = sitedata[, covariates.names],
+  cor.threshold = 0.9,
+) %>% 
+  spatialRF::auto_vif(
+    vif.threshold = 1.2,
+)
+
+new.covariates$selected.variables
+
+
+```
+
+Or in a loop
+
+```{r loop}
+
+cor.set <- c(0.3, 0.4, 0.5, 0.6, 0.7, 0.8)
+vif.set <- c(1.2, 1.5, 2, 2.5)
+
+new.covariates <- data.frame(cor.set = NA, vif.set = NA)
+new.covariates[,c(3:20)] <- NA
+
+for(i in 1:length(cor.set)){
+  for(j in 1:length(vif.set)){
+    
+    cor.threshold <-  cor.set[i]
+    vif.threshold <- vif.set[j]
+  
+    variables <- spatialRF::auto_cor(
+      x = sitedata[, covariates.names],
+      cor.threshold = cor.threshold
+      ) %>%
+    
+    spatialRF::auto_vif(
+      vif.threshold = vif.threshold
+      )
+
+    new.variables <- c(cor.threshold, vif.threshold, c(variables$selected.variables))
+    
+    if(length(variables$selected.variables) < 18){
+      new.variables[(length(variables$selected.variables) + 2):20] <- NA
+    } else {
+      new.variables <- new.variables
+    }
+    
+    new.covariates <- rbind(new.covariates, new.variables)
+    
+  }
+}
+
+new.covariates <- new.covariates[-1,]
+
+
+````
+
+
+## Count occurance of each variable
+
+```{r count}
+
+counts <- table(unlist(new.covariates[-c(1,2)]))
+
+counts[order(counts)]
+
+```

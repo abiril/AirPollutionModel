@@ -1,0 +1,327 @@
+---
+title: "Stepwise Forward Selection"
+author: "Abi Riley"
+date: "2025-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "Z:/home")
+set.seed(23)
+
+```
+
+
+## Load in data
+
+```{r data}
+load(file = "DATA/Data/FINAL ALL.RData")
+
+all <- subset(all, is.na(`Site Name`) | PM25 >= 0)
+sitedata <- subset(all,  PM25 >= 0)
+
+names(sitedata)[order(names(sitedata))]
+```
+
+## Add site ID and select considered variables
+
+```{r vars}
+
+sitedata$siteid <- as.numeric(as.factor(paste(sitedata$`Site Name`, sitedata$Network)))
+names(sitedata)
+covars <- sitedata[,c("background", "urban", "Baseline", 
+                          "major50", "minor10", "Traffic",
+                          "built_s", "built_v", "GHSL.pop",
+                          "Green_Area", "pop", 
+                          "dist.to.maj", "dist.to.min", "dist.to.road",
+                          "Road_dens", "loc.ind", "loc.rural",
+                          "all_dens.scaled", "major_dens.scaled", 
+                          "minor_dens.scaled","primary_dens.scaled",
+                          "PM25MO_2", "PM25PCM",
+                          "AOD_adj2", "NDVI_New",
+                          "Humid", "Temp", "MaxTemp", "Precip", "Press",
+                          "Evapo", "Wind_speed", "Wind_u", "Wind_v")]
+
+
+outcome <- "logPM25"
+
+```
+
+## Define 
+
+  1. Predictive model choice criterion (PMCC) 
+  2. Model fit correlation
+  3. 'write.excel' file function
+
+```{r define}
+
+r2.fit <- function(z, zhat){
+  z <- as.matrix(z)
+  zhat <- as.matrix(zhat)
+  res <- c(z - zhat)
+  r2.fitted <- cor(z,zhat)^2
+  return(r2.fit)
+}
+
+
+PMCC.fit <- function(z, zhat){
+  z <- as.matrix(z)
+  zhat <- as.matrix(zhat)
+  res <- c(z - zhat)
+  gof <- sum(res^2)
+  penalty <-  sum(abs(res))
+  PMCC.fit <- gof + penalty
+  return(PMCC.fit)
+}
+write.excel <- function(x,row.names=FALSE,col.names=TRUE,...) {
+  write.table(x,"clipboard",sep="\t",row.names=row.names,col.names=col.names,...)
+}
+
+```
+
+# Stepwise Forward Model Selection
+
+## Select candidate covariates
+
+```{r candidates}
+
+candidate_covariates <- c("background", "urban", "Baseline", 
+                          "major50", "minor10", "Traffic",
+                          "built_s", "built_v", "GHSL.pop",
+                          "Green_Area", "pop", 
+                          "dist.to.maj", "dist.to.min", "dist.to.road",
+                          "Road_dens", "loc.ind", "loc.rural",
+                          "all_dens.scaled", "major_dens.scaled", 
+                          "minor_dens.scaled","primary_dens.scaled",
+                          "PM25MO_2", "PM25PCM",
+                          "AOD_adj2", "NDVI_New",
+                          "Humid", "Temp", "MaxTemp", "Precip", "Press",
+                          "Evapo", "Wind_speed", "Wind_u", "Wind_v")
+
+sitedata$Intercept <- 1
+
+
+```
+
+## Loop for running model runs for each additional variable and caluclate the PMCC 
+
+Round 1:
+  logPM25 = Intercept
+
+```{r Round1}
+
+results_list <- list()
+pmcc <- c()
+for(i in 1:(length(candidate_covariates))){
+  formula_test <-  reformulate(c("Intercept", 
+                                 paste(candidate_covariates[i],collapse="+")), response ="logPM25")
+  
+  
+  # Fit the model
+  mod.res <- INLA::inla(formula = formula_test,
+                        family = "gaussian",
+                        data = sitedata,
+                        control.predictor=list(link=1,compute=T),
+                        control.compute=list(dic=T, cpo=T, waic = T),
+                        control.inla =list(int.strategy = "eb")
+  )
+  
+  # Extract the fitted values
+  M_fit <- mod.res$summary.fitted.values[,"mean"]
+  
+  # R2: Pseudo_r2 function defined above
+  r2 <- cor(sitedata$logPM25, mod.res$summary.fitted$mean)^2
+  
+  # PMCC: PMCC function defined above
+  PMCC <- PMCC.fit(sitedata$logPM25, mod.res$summary.fitted$mean)
+  
+  # Store the results
+  results_list[[i]] = list("cov" = candidate_covariates[i],
+                           "PMCC" = PMCC)
+}
+results <- do.call(rbind, results_list)
+results
+write.excel(results)
+
+
+```
+
+
+Round 2:
+  logPM25 = Intercept + PM25MO
+
+```{r Round2}
+
+results_list <- list()
+pmcc <- c()
+for(i in 1:(length(candidate_covariates))){
+  formula_test <-  reformulate(c("Intercept", "PM25MO_2",
+                                 paste(candidate_covariates[i],collapse="+")), response ="logPM25")
+  
+  
+  # Fit the model
+  mod.res <- INLA::inla(formula = formula_test,
+                        family = "gaussian",
+                        data = sitedata,
+                        control.predictor=list(link=1,compute=T),
+                        control.compute=list(dic=T, cpo=T, waic = T),
+                        control.inla =list(int.strategy = "eb")
+  )
+  
+  # Extract the fitted values
+  M_fit <- mod.res$summary.fitted.values[,"mean"]
+  
+  # R2: Pseudo_r2 function defined above
+  r2 <- cor(sitedata$logPM25, mod.res$summary.fitted$mean)^2
+  
+  # PMCC: PMCC function defined above
+  PMCC <- PMCC.fit(sitedata$logPM25, mod.res$summary.fitted$mean)
+  
+  # Store the results
+  results_list[[i]] = list("cov" = candidate_covariates[i],
+                           "PMCC" = PMCC)
+}
+results <- do.call(rbind, results_list)
+results
+write.excel(results)
+
+
+```
+
+
+Round 3:
+  logPM25 = Intercept + PM25MO + background
+
+```{r Round3}
+
+results_list <- list()
+pmcc <- c()
+for(i in 1:(length(candidate_covariates))){
+  formula_test <-  reformulate(c("Intercept", "PM25MO_2", "background", "minor_dens.scaled",
+                                 paste(candidate_covariates[i],collapse="+")), response ="logPM25")
+  
+  
+  # Fit the model
+  mod.res <- INLA::inla(formula = formula_test,
+                        family = "gaussian",
+                        data = sitedata,
+                        control.predictor=list(link=1,compute=T),
+                        control.compute=list(dic=T, cpo=T, waic = T),
+                        control.inla =list(int.strategy = "eb")
+  )
+  
+  # Extract the fitted values
+  M_fit <- mod.res$summary.fitted.values[,"mean"]
+  
+  # R2: Pseudo_r2 function defined above
+  r2 <- cor(sitedata$logPM25, mod.res$summary.fitted$mean)^2
+  
+  # PMCC: PMCC function defined above
+  PMCC <- PMCC.fit(sitedata$logPM25, mod.res$summary.fitted$mean)
+  
+  # Store the results
+  results_list[[i]] = list("cov" = candidate_covariates[i],
+                           "PMCC" = PMCC)
+}
+results <- do.call(rbind, results_list)
+results
+write.excel(results)
+
+
+```
+
+
+Round 4:
+  logPM25 = Intercept + PM25MO + background + minor_dens
+
+```{r Round4}
+
+results_list <- list()
+pmcc <- c()
+for(i in 1:(length(candidate_covariates))){
+  formula_test <-  reformulate(c("Intercept", "PM25MO_2", "background", "minor_dens.scaled",
+                                 paste(candidate_covariates[i],collapse="+")), response ="logPM25")
+  
+  
+  # Fit the model
+  mod.res <- INLA::inla(formula = formula_test,
+                        family = "gaussian",
+                        data = sitedata,
+                        control.predictor=list(link=1,compute=T),
+                        control.compute=list(dic=T, cpo=T, waic = T),
+                        control.inla =list(int.strategy = "eb")
+  )
+  
+  # Extract the fitted values
+  M_fit <- mod.res$summary.fitted.values[,"mean"]
+  
+  # R2: Pseudo_r2 function defined above
+  r2 <- cor(sitedata$logPM25, mod.res$summary.fitted$mean)^2
+  
+  # PMCC: PMCC function defined above
+  PMCC <- PMCC.fit(sitedata$logPM25, mod.res$summary.fitted$mean)
+  
+  # Store the results
+  results_list[[i]] = list("cov" = candidate_covariates[i],
+                           "PMCC" = PMCC)
+}
+results <- do.call(rbind, results_list)
+results
+write.excel(results)
+
+
+```
+
+
+Round 5:
+  logPM25 = Intercept + PM25MO + background + minor_dens + Traffic
+
+```{r Round4}
+
+results_list <- list()
+pmcc <- c()
+for(i in 1:(length(candidate_covariates))){
+  formula_test <-  reformulate(c("Intercept", "PM25MO_2", "background", "minor_dens.scaled", 
+                                 "Traffic",
+                                 paste(candidate_covariates[i],collapse="+")), response ="logPM25")
+  
+  
+  # Fit the model
+  mod.res <- INLA::inla(formula = formula_test,
+                        family = "gaussian",
+                        data = sitedata,
+                        control.predictor=list(link=1,compute=T),
+                        control.compute=list(dic=T, cpo=T, waic = T),
+                        control.inla =list(int.strategy = "eb")
+  )
+  
+  # Extract the fitted values
+  M_fit <- mod.res$summary.fitted.values[,"mean"]
+  
+  # R2: Pseudo_r2 function defined above
+  r2 <- cor(sitedata$logPM25, mod.res$summary.fitted$mean)^2
+  
+  # PMCC: PMCC function defined above
+  PMCC <- PMCC.fit(sitedata$logPM25, mod.res$summary.fitted$mean)
+  
+  # Store the results
+  results_list[[i]] = list("cov" = candidate_covariates[i],
+                           "PMCC" = PMCC)
+}
+results <- do.call(rbind, results_list)
+results
+write.excel(results)
+
+
+```
+
+
+END
+
+Chosen variables are:
+    1. Met Office AQR PM2.5 Model
+    2. Background site indicator
+    3. Density of minor roads from OSM
+    4. Traffic environment indicator from OSM 
