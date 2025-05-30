@@ -88,7 +88,12 @@ Furthermore, the model outputs, including full posterior predictive distribution
 │  │  ├── M4b_Laplace_TimeCV.RData         # Final Model Time Cross-Validation INLA Output Data
 │  │  ├── M4b_Laplace_SpatialBlockCV.RData # Final Model Spatial Cross-Validation INLA Output Data
 │  │  ├── ALL_M4b.RData                    # All Model Data with Outputs: Dataframe of all data with final model output
-└──└──└── FINAL_PM25.RData                 # Final predicted PM25 data: observed, predicted, sd, quantiles, etc
-
-
+│  │  └── FINAL_PM25.RData                 # Final predicted PM25 data: observed, predicted, sd, quantiles, etc
+│  ├── Plots                             
+│  │  ┌── M4b_Output.ROut                  # Final Model INLA Output File
+│  │  ├──
+│  │  ├──
+│  │  ├──
+│  │  ├──
+└──└──└──
 
