@@ -2,6 +2,8 @@
 
 Code and complementary material for the paper 'A Bayesian Multisource Fusion Model for Spatiotemporal PM2.5 in an Urban Setting' submitted to Environmetrics journal.
 
+## In construction: to be finalised at publication
+
 ## Abstract
 
 Airborne particulate matter (PM2.5) is a major public health concern in urban environments, where population density and emission sources exacerbate exposure risks. We present a novel Bayesian spatiotemporal fusion model to estimate monthly PM2.5 concentrations over Greater London (2014-2019) at 1km resolution. The model integrates multiple PM2.5 data sources, including outputs from two atmospheric air quality dispersion models and predictive variables, such as vegetation and satellite aerosol optical depth, while explicitly modelling a latent spatiotemporal field. Spatial misalignment of the data is addressed through an upscaling approach to predict across the entire area. 
