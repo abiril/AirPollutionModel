@@ -92,10 +92,8 @@ Furthermore, the model outputs, including full posterior predictive distribution
 │  │  ├── ALL_M4b.RData                    # All Model Data with Outputs: Dataframe of all data with final model output
 │  │  └── FINAL_PM25.RData                 # Final predicted PM25 data: observed, predicted, sd, quantiles, etc
 │  ├── Plots                             
-│  │  ┌── M4b_Output.ROut                  # Final Model INLA Output File
-│  │  ├──
-│  │  ├──
-│  │  ├──
-│  │  ├──
-└──└──└──
+│  │  ┌── M4b_1Month_Pred.png
+│  │  ├── M4b_Prediction.gif             
+│  │  ├── M4b_AllMonths_OpenColours.jpg
+└──└──└── M4b_AllMonths_MoreOpenColours.jpg
 
