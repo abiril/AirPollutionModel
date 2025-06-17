@@ -1,8 +1,9 @@
 # A Bayesian Multisource Fusion Model for Spatiotemporal PM2.5 in an Urban Setting
 
-Code and complementary material for the paper 'A Bayesian Multisource Fusion Model for Spatiotemporal PM2.5 in an Urban Setting' submitted to Environmetrics journal.
+Code and complementary material for the paper 'A Bayesian Multisource Fusion Model for Spatiotemporal PM2.5 in an Urban Setting' submitted to Environmetrics journal and available on arXiv: https://doi.org/10.48550/arXiv.2506.10688
 
-## In construction, to be finalised at publication to 'Environmetrics'.
+
+
 
 ## Abstract
 
