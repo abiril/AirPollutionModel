@@ -82,11 +82,7 @@ Furthermore, the model outputs, including full posterior predictive distribution
 │  │  └── M4b_Laplace.sh
 ├── 3. RESULTS
 │  ├── Outputs                             # Model Outputs and Cross-Validation
-│  │  ┌── M4b_Output.ROut                  # Final Model INLA Output File
-│  │  ├── M4b_Output.RData                 # Final Model INLA Output Data
-│  │  ├── M4b_TimeCV.RData                 # Final Model Time Cross-Validation INLA Output Data
-│  │  ├── M4b_SpatialBlockCV.RData         # Final Model Spatial Cross-Validation INLA Output Data
-│  │  ├── M4b_Laplace_Output.ROut          # Final Model INLA Output File
+│  │  ┌── M4b_Laplace_Output.ROut          # Final Model INLA Output File
 │  │  ├── M4b_Laplace_Output.RData         # Final Model INLA Output Data
 │  │  ├── M4b_Laplace_TimeCV.RData         # Final Model Time Cross-Validation INLA Output Data
 │  │  ├── M4b_Laplace_SpatialBlockCV.RData # Final Model Spatial Cross-Validation INLA Output Data
